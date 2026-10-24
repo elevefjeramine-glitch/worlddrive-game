@@ -2,7 +2,14 @@
 
 Jeu de voiture et d'avion en monde ouvert, sur la vraie carte du monde (OpenStreetMap).
 
-Projet séparé, sans lien avec Moncef IA.
+## Distinction claire — à ne pas confondre
+
+- **WorldDrive** = jeu de voiture et d'avion en monde ouvert, histoire originale « Les Passeurs d'Aube », carte réelle OpenStreetMap.
+- **Moncef IA** = plateforme éducative IA, projet totalement différent.
+- Aucun code partagé, aucun lien, aucune marque commune, aucun site commun.
+- Dépôt GitHub séparé : `worlddrive-game`.
+- Site Netlify séparé, à créer à partir de ce dépôt uniquement.
+- Ce projet est autonome : il se joue et se déploie seul, sans Moncef IA.
 
 ## Contenu
 - `index.html` — jeu monde ouvert, carte réelle, conduite (module Arena)
