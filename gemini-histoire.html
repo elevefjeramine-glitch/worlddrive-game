@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Asphalte & Ombrages - Open World Engine</title>
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+        }
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #111;
+            color: #fff;
+        }
+        #map {
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+        /* Style des marqueurs Leaflet */
+        .player-marker {
+            background-color: #00e5ff;
+            border: 3px solid #fff;
+            border-radius: 50%;
+            box-shadow: 0 0 15px #00e5ff;
+            transition: transform 0.1s linear;
+        }
+        .vehicle-marker {
+            background-color: #ff2a6d;
+            border: 2px solid #fff;
+            border-radius: 4px;
+            box-shadow: 0 0 12px #ff2a6d;
+            transition: transform 0.1s linear;
+        }
+        /* Interface Utilisateur (HUD) */
+        #hud {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 1000;
+            background: rgba(10, 10, 15, 0.85);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            padding: 20px;
+            border-radius: 12px;
+            width: 340px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+        .char-card {
+            margin-bottom: 15px;
+        }
+        .char-name {
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: #00e5ff;
+            margin-bottom: 4px;
+        }
+        .char-desc {
+            font-size: 0.85rem;
+            color: #ccc;
+            margin-bottom: 10px;
+            line-height: 1.3;
+        }
+        .char-dialogue {
+            font-style: italic;
+            font-size: 0.85rem;
+            color: #ffc107;
+            background: rgba(255,255,255,0.05);
+            padding: 8px;
+            border-left: 3px solid #ffc107;
+            margin-bottom: 12px;
+        }
+        .objective-box {
+            background: rgba(0, 229, 255, 0.1);
+            border: 1px dashed #00e5ff;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            margin-bottom: 15px;
+        }
+        .controls-hint {
+            font-size: 0.75rem;
+            color: #888;
+            border-top: 1px solid rgba(255,255,255,0.1);
+            padding-top: 10px;
+        }
+        .btn-group {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 15px;
+        }
+        .btn-char {
+            flex: 1;
+            padding: 8px 4px;
+            background: #222;
+            border: 1px solid #444;
+            color: #fff;
+            font-size: 0.75rem;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
+        .btn-char:hover, .btn-char.active {
+            background: #00e5ff;
+            color: #000;
+            font-weight: bold;
+            border-color: #00e5ff;
+        }
+        #action-prompt {
+            position: absolute;
+            bottom: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000;
+            background: #ff2a6d;
+            color: #fff;
+            padding: 12px 24px;
+            border-radius: 30px;
+            font-weight: bold;
+            font-size: 1rem;
+            box-shadow: 0 0 20px rgba(255, 42, 109, 0.6);
+            display: none;
+            animation: pulse 1s infinite alternate;
+        }
+        @keyframes pulse {
+            from { transform: translateX(-50%) scale(1); }
+            to { transform: translateX(-50%) scale(1.05); }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="hud">
+        <div class="btn-group">
+            <button class="btn-char active" onclick="switchCharacter(0)">Jax</button>
+            <button class="btn-char" onclick="switchCharacter(1)">Maya</button>
+            <button class="btn-char" onclick="switchCharacter(2)">Marcus</button>
+        </div>
+        <div class="char-card">
+            <div id="char-name" class="char-name">Jax "L'Ombre"</div>
+            <div id="char-desc" class="char-desc">Ex-mécano. Blouson de cuir râpé, démarche nerveuse.</div>
+            <div id="char-dialogue" class="char-dialogue">"Si ça a un moteur, je peux le faire démarrer."</div>
+        </div>
+        <div class="objective-box">
+            <strong>Objectif :</strong> <span id="char-objective">Atteindre la sportive rouge et monter à bord.</span>
+        </div>
+        <div class="controls-hint">
+            <strong>Contrôles :</strong><br>
+            • Z, Q, S, D ou Flèches : Se déplacer / Conduire<br>
+            • Touche E ou Espace : Monter / Descendre du véhicule
+        </div>
+    </div>
+
+    <div id="action-prompt">Appuyez sur [ E ] pour entrer dans le véhicule</div>
+    <div id="map"></div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        /**
+         * =================================================================
+         * PARAMÈTRES ET CONFIGURATION DU JEU (RÉGLABLES)
+         * =================================================================
+         */
+        const GAME_CONFIG = {
+            // Position initiale de la carte (Paris / Quartier Opéra)
+            START_LAT: 48.8708,
+            START_LNG: 2.3132,
+            MAP_ZOOM: 18,
+
+            // Vitesses de déplacement (degrés Lat/Lng par frame)
+            PEDESTRIAN_SPEED: 0.00003,
+            VEHICLE_SPEED: 0.00012,
+            ROTATION_SPEED: 4, // Degrés de rotation par frame
+
+            // Distance d'interaction véhicule (en mètres)
+            INTERACTION_DISTANCE_METERS: 15,
+
+            // Base de données des personnages
+            CHARACTERS: [
+                {
+                    id: 0,
+                    name: 'Jax "L\'Ombre"',
+                    visual: 'Ex-mécano. Blouson de cuir râpé, casquette sombre, démarche nerveuse.',
+                    dialogue: '"Si ça a un moteur, je peux le faire démarrer. Simple."',
+                    objective: 'Trouver la sportive rouge garée à proximité et s\'en emparer.',
+                    color: '#00e5ff',
+                    startOffset: [0, 0]
+                },
+                {
+                    id: 1,
+                    name: 'Maya "Flash"',
+                    visual: 'Hacker. Sweat oversize, écouteurs fluo, sac à dos bardé de stickers.',
+                    dialogue: '"Les feux passent au vert quand je le décide. Portières déverrouillées !"',
+                    objective: 'Localiser la berline noire piratable et monter à bord.',
+                    color: '#00ff66',
+                    startOffset: [0.0005, 0.0005]
+                },
+                {
+                    id: 2,
+                    name: 'Marcus "Le Marteau"',
+                    visual: 'Inspecteur suspendu. Manteau long, cicatrice à l\'arcade, démarche lourde.',
+                    dialogue: '"La loi s\'arrête là où ma course commence."',
+                    objective: 'Rejoindre l\'intercepteur banalisé avant le départ des cibles.',
+                    color: '#ffb703',
+                    startOffset: [-0.0005, -0.0005]
+                }
+            ],
+
+            // Emplacements des véhicules
+            VEHICLES: [
+                { id: 1, name: "Sportive Rouge", lat: 48.8712, lng: 2.3140, color: "#ff2a6d", model: "Coupe GT" },
+                { id: 2, name: "Berline Noire", lat: 48.8702, lng: 2.3120, color: "#333333", model: "Sedan Tech" },
+                { id: 3, name: "Intercepteur Fllic", lat: 48.8718, lng: 2.3125, color: "#1a73e8", model: "V8 Cruiser" }
+            ]
+        };
+
+        /**
+         * =================================================================
+         * MOTEUR DU JEU (MODULE PRINCIPAL)
+         * =================================================================
+         */
+        class OpenWorldEngine {
+            constructor(config) {
+                this.config = config;
+                this.map = null;
+                this.playerState = {
+                    lat: config.START_LAT,
+                    lng: config.START_LNG,
+                    heading: 0,
+                    isInsideVehicle: false,
+                    currentVehicle: null,
+                    activeCharIndex: 0
+                };
+
+                this.keys = {};
+                this.playerMarker = null;
+                this.vehicleMarkers = [];
+                this.nearbyVehicle = null;
+
+                this.initMap();
+                this.initVehicles();
+                this.initPlayer();
+                this.initInputs();
+                this.gameLoop();
+            }
+
+            initMap() {
+                this.map = L.map('map', {
+                    zoomControl: false,
+                    attributionControl: false
+                }).setView([this.config.START_LAT, this.config.START_LNG], this.config.MAP_ZOOM);
+
+                // OpenStreetMap Tuiles Gratuites
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    maxZoom: 19
+                }).addTo(this.map);
+            }
+
+            initVehicles() {
+                this.config.VEHICLES.forEach(v => {
+                    const icon = L.divIcon({
+                        className: 'vehicle-marker',
+                        iconSize: [22, 12],
+                        iconAnchor: [11, 6]
+                    });
+                    const marker = L.marker([v.lat, v.lng], { icon: icon }).addTo(this.map);
+                    marker.getElement().style.backgroundColor = v.color;
+                    
+                    this.vehicleMarkers.push({
+                        data: v,
+                        marker: marker,
+                        lat: v.lat,
+                        lng: v.lng,
+                        heading: 0
+                    });
+                });
+            }
+
+            initPlayer() {
+                const char = this.config.CHARACTERS[this.playerState.activeCharIndex];
+                const icon = L.divIcon({
+                    className: 'player-marker',
+                    iconSize: [16, 16],
+                    iconAnchor: [8, 8]
+                });
+
+                this.playerState.lat = this.config.START_LAT + char.startOffset[0];
+                this.playerState.lng = this.config.START_LNG + char.startOffset[1];
+
+                this.playerMarker = L.marker([this.playerState.lat, this.playerState.lng], { icon: icon }).addTo(this.map);
+                this.playerMarker.getElement().style.backgroundColor = char.color;
+            }
+
+            initInputs() {
+                window.addEventListener('keydown', (e) => {
+                    this.keys[e.key.toLowerCase()] = true;
+                    if (e.key.toLowerCase() === 'e' || e.key === ' ') {
+                        this.toggleVehicleInteraction();
+                    }
+                });
+
+                window.addEventListener('keyup', (e) => {
+                    this.keys[e.key.toLowerCase()] = false;
+                });
+            }
+
+            switchCharacter(index) {
+                if (this.playerState.isInsideVehicle) {
+                    this.exitVehicle();
+                }
+                
+                this.playerState.activeCharIndex = index;
+                const char = this.config.CHARACTERS[index];
+
+                // Mise à jour HUD
+                document.getElementById('char-name').innerText = char.name;
+                document.getElementById('char-desc').innerText = char.visual;
+                document.getElementById('char-dialogue').innerText = char.dialogue;
+                document.getElementById('char-objective').innerText = char.objective;
+
+                // Mise à jour visuelle des boutons
+                const btns = document.querySelectorAll('.btn-char');
+                btns.forEach((btn, i) => {
+                    if (i === index) btn.classList.add('active');
+                    else btn.classList.remove('active');
+                });
+
+                // Repositionnement du joueur
+                this.playerState.lat = this.config.START_LAT + char.startOffset[0];
+                this.playerState.lng = this.config.START_LNG + char.startOffset[1];
+                this.playerMarker.setLatLng([this.playerState.lat, this.playerState.lng]);
+                this.playerMarker.getElement().style.backgroundColor = char.color;
+                this.map.panTo([this.playerState.lat, this.playerState.lng]);
+            }
+
+            toggleVehicleInteraction() {
+                if (this.playerState.isInsideVehicle) {
+                    this.exitVehicle();
+                } else if (this.nearbyVehicle) {
+                    this.enterVehicle(this.nearbyVehicle);
+                }
+            }
+
+            enterVehicle(vehicleObj) {
+                this.playerState.isInsideVehicle = true;
+                this.playerState.currentVehicle = vehicleObj;
+                this.map.removeLayer(this.playerMarker); // Cache le marqueur piéton
+                document.getElementById('action-prompt').style.display = 'none';
+            }
+
+            exitVehicle() {
+                if (!this.playerState.isInsideVehicle) return;
+
+                const veh = this.playerState.currentVehicle;
+                // Dépose le joueur légèrement à côté du véhicule
+                this.playerState.lat = veh.lat + 0.00005;
+                this.playerState.lng = veh.lng + 0.00005;
+
+                this.playerMarker.addTo(this.map);
+                this.playerMarker.setLatLng([this.playerState.lat, this.playerState.lng]);
+                
+                this.playerState.isInsideVehicle = false;
+                this.playerState.currentVehicle = null;
+            }
+
+            updateMovement() {
+                let speed = this.playerState.isInsideVehicle ? this.config.VEHICLE_SPEED : this.config.PEDESTRIAN_SPEED;
+                let moveForward = 0;
+
+                // Orientation / Direction
+                if (this.keys['q'] || this.keys['arrowleft']) {
+                    this.playerState.heading -= this.config.ROTATION_SPEED;
+                }
+                if (this.keys['d'] || this.keys['arrowright']) {
+                    this.playerState.heading += this.config.ROTATION_SPEED;
+                }
+
+                // Avancer / Reculer
+                if (this.keys['z'] || this.keys['w'] || this.keys['arrowup']) {
+                    moveForward = 1;
+                }
+                if (this.keys['s'] || this.keys['arrowdown']) {
+                    moveForward = -0.5; // Marche arrière plus lente
+                }
+
+                if (moveForward !== 0) {
+                    const rad = (this.playerState.heading * Math.PI) / 180;
+                    const deltaLat = Math.cos(rad) * speed * moveForward;
+                    const deltaLng = Math.sin(rad) * speed * moveForward;
+
+                    if (this.playerState.isInsideVehicle) {
+                        const veh = this.playerState.currentVehicle;
+                        veh.lat += deltaLat;
+                        veh.lng += deltaLng;
+                        veh.heading = this.playerState.heading;
+                        veh.marker.setLatLng([veh.lat, veh.lng]);
+                        veh.marker.getElement().style.transform += ` rotate(${veh.heading}deg)`;
+                        
+                        this.playerState.lat = veh.lat;
+                        this.playerState.lng = veh.lng;
+                    } else {
+                        this.playerState.lat += deltaLat;
+                        this.playerState.lng += deltaLng;
+                        this.playerMarker.setLatLng([this.playerState.lat, this.playerState.lng]);
+                        this.playerMarker.getElement().style.transform = `rotate(${this.playerState.heading}deg)`;
+                    }
+
+                    // Suivi de caméra
+                    this.map.panTo([this.playerState.lat, this.playerState.lng], { animate: false });
+                }
+            }
+
+            checkProximity() {
+                if (this.playerState.isInsideVehicle) return;
+
+                let minDistance = Infinity;
+                let closest = null;
+                const playerLatLng = L.latLng(this.playerState.lat, this.playerState.lng);
+
+                this.vehicleMarkers.forEach(v => {
+                    const dist = playerLatLng.distanceTo(L.latLng(v.lat, v.lng));
+                    if (dist < minDistance) {
+                        minDistance = dist;
+                        closest = v;
+                    }
+                });
+
+                const prompt = document.getElementById('action-prompt');
+                if (minDistance <= this.config.INTERACTION_DISTANCE_METERS) {
+                    this.nearbyVehicle = closest;
+                    prompt.innerText = `Appuyez sur [ E ] pour entrer dans : ${closest.data.name}`;
+                    prompt.style.display = 'block';
+                } else {
+                    this.nearbyVehicle = null;
+                    prompt.style.display = 'none';
+                }
+            }
+
+            gameLoop() {
+                this.updateMovement();
+                this.checkProximity();
+                requestAnimationFrame(() => this.gameLoop());
+            }
+        }
+
+        // Lancement de l'application au chargement de la page
+        let game;
+        window.addEventListener('DOMContentLoaded', () => {
+            game = new OpenWorldEngine(GAME_CONFIG);
+        });
+
+        function switchCharacter(index) {
+            if (game) game.switchCharacter(index);
+        }
+    </script>
+</body>
+</html>
