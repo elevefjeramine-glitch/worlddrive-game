@@ -1,1623 +1,1021 @@
 <!DOCTYPE html>
-<html lang="fr" class="dark">
+<html lang="fr">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>OSM DRIVE // Module 1 — Simulateur Monde Ouvert</title>
-
-  <!-- Google Fonts: Space Grotesk, Inter, JetBrains Mono -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700;800&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
-
-  <!-- Leaflet 1.9.4 CSS -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
-
-  <!-- Tailwind CSS v4 Browser CDN -->
-  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
-
-  <style>
-    :root {
-      --hud-bg: rgba(11, 15, 23, 0.84);
-      --hud-bg-elevated: rgba(20, 27, 45, 0.92);
-      --hud-border: rgba(255, 255, 255, 0.12);
-      --accent-cyan: #00F0FF;
-      --accent-emerald: #10B981;
-      --accent-amber: #F59E0B;
-      --accent-red: #EF4444;
-    }
-
-    * {
-      box-sizing: border-box;
-      -webkit-tap-highlight-color: transparent;
-      user-select: none;
-      -webkit-user-select: none;
-    }
-
-    html, body {
-      margin: 0;
-      padding: 0;
-      width: 100vw;
-      height: 100dvh;
-      overflow: hidden;
-      background-color: #070A10;
-      color: #F8FAFC;
-      font-family: 'Inter', system-ui, -apple-system, sans-serif;
-      touch-action: none;
-    }
-
-    .font-display {
-      font-family: 'Space Grotesk', sans-serif;
-    }
-
-    .font-mono-tabular {
-      font-family: 'JetBrains Mono', monospace;
-      font-variant-numeric: tabular-nums;
-    }
-
-    /* Map Canvas Layer */
-    #map {
-      position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      z-index: 1;
-      background: #0b0f17;
-    }
-
-    /* Optional Tactical Dark Filter for Standard OSM Tiles */
-    body.map-theme-tactical .leaflet-tile-pane {
-      filter: invert(100%) hue-rotate(185deg) brightness(92%) contrast(95%) saturate(85%);
-    }
-    body.map-theme-classic .leaflet-tile-pane {
-      filter: contrast(103%) saturate(108%);
-    }
-    body.map-theme-night .leaflet-tile-pane {
-      filter: brightness(96%) contrast(108%);
-    }
-
-    /* Hide intrusive default Leaflet controls, keep subtle attribution */
-    .leaflet-control-attribution {
-      background: rgba(11, 15, 23, 0.65) !important;
-      color: #64748B !important;
-      font-size: 10px !important;
-      backdrop-filter: blur(6px);
-      border-top-left-radius: 6px;
-      padding: 2px 6px !important;
-      border-top: 1px solid rgba(255,255,255,0.08);
-      border-left: 1px solid rgba(255,255,255,0.08);
-    }
-    .leaflet-control-attribution a {
-      color: #94A3B8 !important;
-    }
-
-    /* FX Canvas for Skid Marks, Drift Smoke, GPS Target Line */
-    #fx-canvas {
-      position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      z-index: 400;
-      pointer-events: none;
-    }
-
-    /* Car Overlay Container (Centered or Synced with Map Point) */
-    #car-layer {
-      position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      z-index: 450;
-      pointer-events: none;
-      overflow: hidden;
-    }
-
-    /* Glassmorphic HUD Panel */
-    .hud-glass {
-      background: var(--hud-bg);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      border: 1px solid var(--hud-border);
-      box-shadow: 0 12px 32px -4px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.04) inset;
-    }
-
-    .hud-glass-elevated {
-      background: var(--hud-bg-elevated);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      border: 1px solid rgba(255, 255, 255, 0.16);
-      box-shadow: 0 16px 40px -6px rgba(0, 0, 0, 0.7);
-    }
-
-    /* City Quick-Teleport Pill */
-    .city-pill {
-      transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
-    }
-    .city-pill:hover {
-      background: rgba(0, 240, 255, 0.14);
-      border-color: rgba(0, 240, 255, 0.45);
-      color: #FFFFFF;
-      transform: translateY(-1px);
-    }
-    .city-pill.active {
-      background: rgba(0, 240, 255, 0.18);
-      border-color: #00F0FF;
-      color: #00F0FF;
-      box-shadow: 0 0 14px rgba(0, 240, 255, 0.25);
-    }
-
-    /* Touch Control Pedals & Steering Buttons */
-    .control-btn {
-      touch-action: none;
-      transition: transform 0.08s ease, background-color 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
-    }
-    .control-btn:active,
-    .control-btn.is-pressed {
-      transform: scale(0.93);
-    }
-    .control-btn-steer.is-pressed {
-      background: rgba(0, 240, 255, 0.24) !important;
-      border-color: #00F0FF !important;
-      box-shadow: 0 0 20px rgba(0, 240, 255, 0.4), inset 0 0 12px rgba(0, 240, 255, 0.25);
-      color: #00F0FF !important;
-    }
-    .control-btn-gas.is-pressed {
-      background: rgba(16, 185, 129, 0.28) !important;
-      border-color: #10B981 !important;
-      box-shadow: 0 0 24px rgba(16, 185, 129, 0.45), inset 0 0 14px rgba(16, 185, 129, 0.3);
-      color: #34D399 !important;
-    }
-    .control-btn-brake.is-pressed {
-      background: rgba(239, 68, 68, 0.28) !important;
-      border-color: #EF4444 !important;
-      box-shadow: 0 0 24px rgba(239, 68, 68, 0.45), inset 0 0 14px rgba(239, 68, 68, 0.3);
-      color: #F87171 !important;
-    }
-    .control-btn-drift.is-pressed {
-      background: rgba(245, 158, 11, 0.28) !important;
-      border-color: #F59E0B !important;
-      box-shadow: 0 0 20px rgba(245, 158, 11, 0.45);
-      color: #FBBF24 !important;
-    }
-
-    /* Custom Scrollbar for Search Dropdown */
-    ::-webkit-scrollbar {
-      width: 5px;
-      height: 5px;
-    }
-    ::-webkit-scrollbar-track {
-      background: rgba(11, 15, 23, 0.4);
-    }
-    ::-webkit-scrollbar-thumb {
-      background: rgba(148, 163, 184, 0.3);
-      border-radius: 9999px;
-    }
-
-    /* Pulse animation for GPS target pin */
-    @keyframes targetPulse {
-      0% { transform: scale(0.8); opacity: 0.9; }
-      70% { transform: scale(2.2); opacity: 0; }
-      100% { transform: scale(2.2); opacity: 0; }
-    }
-    .gps-target-ring {
-      animation: targetPulse 1.6s infinite cubic-bezier(0.2, 0.8, 0.4, 1);
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>WorldDrive — Les Passeurs d'Aube | Jeu complet assemblé</title>
+<!--
+================================================================================
+WORLDRIVE — LES PASSEURS D'AUBE — FICHIER ASSEMBLÉ ET COMMENTÉ
+But : un seul fichier index.html qui fonctionne seul, sans clé API payante,
+sans serveur de jeu, sans compte obligatoire.
+  - Carte réelle : Leaflet + tuiles publiques OpenStreetMap (gratuites).
+  - Recherche de ville : Nominatim public (gratuit, avec repli local).
+  - Multijoueur : PeerJS public gratuit, en pair-à-pair WebRTC (§15).
+    Si PeerJS est hors-ligne, le jeu solo continue, erreur affichée en français.
+  - Sons et radio : 100 % Web Audio, synthétisés dans le navigateur.
+  - Sauvegarde : localStorage du navigateur, aucune donnée envoyée ailleurs.
+Projet séparé : WorldDrive n'a AUCUN lien avec Moncef IA.
+TABLE DES MATIÈRES
+  §A CSS : HUD, gros boutons, panneaux, responsive mobile
+  §B HTML : accueil, barre du haut, barre caméra, HUD, panneaux
+  §1 Données réelles : 13 voitures, 6 avions, 10 bases, villes
+  §2 Personnages : 13 pilotes peaufinés (rôle, traits, réplique)
+  §3 Campagne : Les Passeurs d'Aube, 6 chapitres, 6 Phares
+  §4 État du jeu + sauvegarde locale (localStorage)
+  §5 Carte OSM + recherche de ville + téléports
+  §6 Conduite : physique, drift, nitro / SpaceX, dégâts, police / Brume
+  §7 Caméra GTA : derrière, Conducteur, Capot, angle libre (C / V)
+  §8 Trafic : 12 voitures avec silhouette de modèle réel distinct
+  §9 Missions libres : course, livraison, collecte, drift, TAXI
+  §10 Garage : pilote, peinture, améliorations, fiche réelle, Roadster
+  §11 Hangar : bases, avions, fiche réelle, cockpit réel, vols passagers
+  §12 À pied (F) + retour en voiture
+  §13 Radio Web Audio : Aube FM, Nitro FM, Casa Waves
+  §14 Minimap façon GTA + cycle jour/nuit (Longue Nuit)
+  §15 Multijoueur P2P PeerJS : salon code 6 caractères, ~8 Hz
+  §16 Trophées (8) + Objectifs (7) + boucle principale
+  §17 Clavier, tactile, démarrage
+================================================================================
+-->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<style>
+/* ===== §A — CSS : pas de petits boutons entassés. Cible tactile ≥48 px. ===== */
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0;width:100%;height:100dvh;overflow:hidden;background:#070a10;color:#f8fafc;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+#map{position:absolute;inset:0;z-index:1}
+#night{position:absolute;inset:0;z-index:2;pointer-events:none;background:rgba(2,6,23,.55);transition:opacity 1s}
+#sky{position:absolute;left:0;right:0;top:0;height:110px;z-index:2;pointer-events:none;background:linear-gradient(#7db8e8,#cfe8ff 60%,transparent);opacity:.9}
+#topbar{position:absolute;top:10px;left:10px;right:10px;z-index:20;display:flex;gap:10px;flex-wrap:wrap}
+#topbar button,.bigbtn{min-height:48px;padding:0 16px;border-radius:14px;border:1px solid rgba(255,255,255,.25);background:rgba(11,15,23,.88);color:#fff;font-size:16px;font-weight:700;cursor:pointer}
+#topbar button:active,.bigbtn:active{transform:scale(.97)}
+button.red{border-color:#ef4444;background:rgba(127,29,29,.9)}
+#cambar{position:absolute;top:70px;left:10px;z-index:20;display:flex;gap:8px;flex-wrap:wrap;align-items:center;background:rgba(11,15,23,.8);border:1px solid rgba(255,255,255,.2);border-radius:14px;padding:8px}
+#cambar button{min-height:44px;padding:0 12px;border-radius:10px;border:1px solid rgba(255,255,255,.25);background:#1e293b;color:#fff;font-size:14px;font-weight:700;cursor:pointer}
+#cambar button.on{background:#dc2626}
+#cambar input[type=range]{width:120px;accent-color:#dc2626}
+#hud{position:absolute;left:10px;bottom:10px;z-index:20;background:rgba(11,15,23,.88);border:1px solid rgba(255,255,255,.2);border-radius:16px;padding:12px 14px;min-width:230px}
+#hud .speed{font-size:42px;font-weight:900;line-height:1}
+#hud .row{display:flex;gap:14px;font-size:14px;font-weight:700;margin-top:6px;flex-wrap:wrap}
+#minimapWrap{position:absolute;top:10px;right:10px;z-index:20;text-align:center}
+#minimap{width:150px;height:150px;border-radius:50%;border:3px solid rgba(255,255,255,.7);background:#0f172a;display:block}
+#minimapWrap span{font-size:12px;font-weight:800;background:rgba(0,0,0,.7);padding:2px 8px;border-radius:8px}
+.panel{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:40;width:min(680px,94vw);max-height:88dvh;overflow:auto;background:#0f172a;border:2px solid #dc2626;border-radius:18px;padding:18px;display:none}
+.panel.open{display:block}
+.panel h2{margin:0 0 8px}.panel h3{margin:16px 0 6px;color:#fbbf24}
+.close{float:right;min-height:44px;min-width:44px;border-radius:10px;border:1px solid #fff;background:#334155;color:#fff;font-size:18px;cursor:pointer}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.card{border:1px solid rgba(255,255,255,.25);border-radius:14px;padding:12px;background:#1e293b;cursor:pointer}
+.card.sel{border-color:#fbbf24;box-shadow:0 0 0 2px #fbbf24 inset}
+.card b{font-size:16px}.card p{margin:6px 0;font-size:13px;line-height:1.45;color:#e2e8f0}
+.spec{display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:13px}
+.spec div{background:#0f172a;border-radius:8px;padding:6px 8px}
+.spec b{display:block;color:#fbbf24}
+#cockpit{position:absolute;left:0;right:0;bottom:0;height:46dvh;z-index:15;pointer-events:none;display:none}
+#cockpit.on{display:block}
+#cockpit .pillars{position:absolute;top:0;left:0;right:0;height:100%;background:linear-gradient(90deg,#111 0 9%,transparent 9% 91%,#111 91% 100%)}
+#cockpit .dash{position:absolute;left:0;right:0;bottom:0;height:52%;background:linear-gradient(#1f2937,#0b1220);border-top:4px solid #334155;border-radius:24px 24px 0 0;text-align:center;padding-top:10px}
+#cockpit .wheel{font-size:64px;display:inline-block;transition:transform .1s}
+#cockpit .mirror{position:absolute;top:8px;left:50%;transform:translateX(-50%);background:#111827;border:2px solid #475569;border-radius:10px;padding:4px 14px;font-size:13px;font-weight:800}
+#cockpit .plaque{position:absolute;top:52px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.75);border:1px solid #fbbf24;border-radius:10px;padding:6px 12px;font-size:13px;font-weight:700}
+#touch{position:absolute;right:10px;bottom:10px;z-index:20;display:grid;grid-template-columns:repeat(3,64px);gap:10px}
+#touch button{width:64px;height:64px;border-radius:50%;border:2px solid rgba(255,255,255,.4);background:rgba(15,23,42,.9);color:#fff;font-size:22px;font-weight:900;cursor:pointer}
+#touch button:active{background:#dc2626}
+#msg{position:absolute;left:50%;top:120px;transform:translateX(-50%);z-index:30;background:rgba(0,0,0,.85);border:1px solid #fbbf24;border-radius:12px;padding:10px 16px;font-weight:800;text-align:center;max-width:92vw;display:none}
+#home{position:absolute;inset:0;z-index:50;background:linear-gradient(160deg,#0f172a,#7f1d1d 60%,#0f172a);overflow:auto;padding:22px}
+#home .box{max-width:760px;margin:0 auto;background:rgba(0,0,0,.55);border-radius:20px;padding:22px}
+#home h1{font-size:34px;margin:0 0 6px}
+#home ol li{margin:8px 0;font-size:16px;line-height:1.5}
+@media (max-width:640px){
+  #hud{min-width:0;right:170px}
+  #minimap{width:110px;height:110px}
+  .grid{grid-template-columns:1fr}
+  #home h1{font-size:26px}
+  #touch{grid-template-columns:repeat(3,58px)}
+  #touch button{width:58px;height:58px}
+}
+</style>
 </head>
-<body class="map-theme-tactical">
+<body>
+<!-- ===== §B — HTML : accueil, barres, HUD, panneaux ===== -->
+<div id="map"></div><div id="sky"></div><div id="night"></div><div id="msg"></div>
+<div id="topbar">
+  <button onclick="startGame()">▶ Démarrer</button>
+  <button onclick="openPanel('missionPanel')">Mission</button>
+  <button onclick="openPanel('campaignPanel')">Route des Aubes</button>
+  <button onclick="openPanel('multiPanel')">Multijoueur</button>
+  <button onclick="togglePanel('menuPanel')">☰ Menu</button>
+</div>
+<div id="cambar">
+  <span><b>Caméra</b></span>
+  <button id="camBtn" onclick="cycleCamera()">GTA · derrière</button>
+  <button onclick="freeAngle(-15)">◀ Angle</button>
+  <button onclick="freeAngle(15)">Angle ▶</button>
+  <button onclick="cyclePreset()">V : angle prédéfini</button>
+  <label>Inclinaison <input id="tilt" type="range" min="18" max="68" value="48" oninput="state.tilt=+this.value"></label>
+  <span id="camInfo">0° · 48°</span>
+</div>
+<div id="hud">
+  <div class="speed"><span id="speed">0</span> <small>km/h</small></div>
+  <div class="row"><span id="gear">Rapport 1</span><span id="nitro">NITRO 100%</span><span id="health">ÉTAT 100%</span></div>
+  <div class="row"><span id="money">0 $</span><span id="level">Niv. 1</span><span id="stars">★ 0</span><span id="city">Casablanca</span></div>
+  <div class="row"><span id="aubes">Aubes rallumées 0/6</span><span id="radioHud">Radio : arrêt</span></div>
+</div>
+<div id="minimapWrap"><canvas id="minimap" width="150" height="150"></canvas><br><span>MINIMAP · N ↑</span></div>
+<div id="touch">
+  <span></span><button data-k="up">▲</button><span></span>
+  <button data-k="left">◀</button><button data-k="down">▼</button><button data-k="right">▶</button>
+</div>
+<div id="cockpit"><div class="pillars"></div><div class="mirror">▭ RÉTROVISEUR</div><div class="plaque" id="dashPlaque">—</div>
+  <div class="dash"><div class="wheel" id="wheel">⭕</div><div id="cockpitInfo">Vitesse · Mach · Altitude</div></div></div>
 
-  <!-- 1. FULL-VIEWPORT LEAFLET MAP CANVAS -->
-  <div id="map" aria-label="Carte du monde OpenStreetMap"></div>
+<div class="panel" id="missionPanel"><button class="close" onclick="closePanels()">✕</button><h2>Missions libres</h2>
+  <p>Rejoins le point doré avant la fin du chrono. Récompenses en argent et XP, sauvegardées.</p>
+  <div class="grid" id="missionList"></div></div>
+<div class="panel" id="campaignPanel"><button class="close" onclick="closePanels()">✕</button><h2>Route des Aubes — 6 chapitres</h2>
+  <p>La Longue Nuit éteint les villes. Toi, Passeur d'Aube, tu rallumes 6 Phares, un par chapitre.</p>
+  <div id="campaignList"></div><div id="campaignDialog" style="background:#1e293b;border-radius:12px;padding:12px;margin-top:10px"></div></div>
+<div class="panel" id="menuPanel"><button class="close" onclick="closePanels()">✕</button><h2>☰ Menu</h2>
+  <h3>Partie</h3><div class="grid">
+    <button class="bigbtn" onclick="openPanel('objectivesPanel')">Objectifs</button>
+    <button class="bigbtn" onclick="openPanel('trophiesPanel')">Trophées</button></div>
+  <h3>Véhicule &amp; monde</h3><div class="grid">
+    <button class="bigbtn" onclick="openPanel('garagePanel')">Garage</button>
+    <button class="bigbtn" onclick="openPanel('hangarPanel')">Base avions</button>
+    <button class="bigbtn" onclick="walkMode()">À pied (F)</button>
+    <button class="bigbtn" onclick="honk()">Klaxon (H)</button></div>
+  <h3>Affichage &amp; son</h3><div class="grid">
+    <button class="bigbtn" id="soundBtn" onclick="toggleSound()">Son : oui</button>
+    <button class="bigbtn" id="radioBtn" onclick="cycleRadio()">Radio : arrêt</button>
+    <button class="bigbtn" onclick="centerMap()">Recentrer</button>
+    <button class="bigbtn" onclick="resetSave()">Tout réinitialiser</button></div>
+  <h3>Recherche de ville</h3>
+  <input id="cityInput" placeholder="Ex : Paris, Tokyo, Rabat…" style="width:100%;min-height:48px;border-radius:12px;padding:10px;font-size:16px">
+  <button class="bigbtn" style="margin-top:10px" onclick="searchCity()">🔍 Rechercher / Téléporter</button>
+  <div id="cityResults" style="margin-top:10px"></div></div>
+<div class="panel" id="garagePanel"><button class="close" onclick="closePanels()">✕</button><h2>Garage</h2>
+  <div id="pilotList" class="grid"></div>
+  <h3 id="ficheName">Fiche réelle</h3><div class="spec" id="ficheSpecs"></div>
+  <p id="ficheHabitacle"></p><p id="ficheSummary"></p>
+  <h3>Tesla Roadster — tes fonctionnalités</h3><div class="grid">
+    <button class="bigbtn" id="btnSpaceX" onclick="toggleRoadster('spacex')">SpaceX : Activé</button>
+    <button class="bigbtn" id="btnRoof" onclick="toggleRoadster('roof')">Toit : Fermé</button>
+    <button class="bigbtn" id="btnAuto" onclick="toggleRoadster('auto')">Autopilote : Coupé</button></div>
+  <h3>Peinture</h3><div id="paintList" class="grid"></div></div>
+<div class="panel" id="hangarPanel"><button class="close" onclick="closePanels()">✕</button><h2>Base avions — Hangar</h2>
+  <p>Choisis une base, puis un avion. Les Boeing transportent des passagers vers une autre base et sont payés passagers × distance.</p>
+  <div id="baseList" class="grid"></div><div id="planeList" class="grid" style="margin-top:12px"></div>
+  <div id="planeFiche" style="margin-top:12px"></div></div>
+<div class="panel" id="multiPanel"><button class="close" onclick="closePanels()">✕</button><h2>Multijoueur — 100 % gratuit, pair-à-pair</h2>
+  <p id="multiStatus">État du salon : non connecté. Aucun serveur de jeu, aucune donnée de partie sur un serveur central. Seul le broker public gratuit PeerJS fait la présentation initiale.</p>
+  <div class="grid"><button class="bigbtn" onclick="createRoom()">Créer mon salon</button>
+  <button class="bigbtn" onclick="joinRoom()">Rejoindre</button></div>
+  <input id="roomCode" placeholder="Code salon à 6 caractères" style="width:100%;min-height:48px;border-radius:12px;padding:10px;font-size:16px;margin-top:10px">
+  <div id="partnerBox" style="margin-top:12px;background:#1e293b;border-radius:12px;padding:12px">Partenaire : aucun pour l'instant.</div>
+  <button class="bigbtn" style="margin-top:10px" onclick="teleportToPartner()">Me téléporter chez lui</button>
+  <p>Astuces : donne ton code à un ami, restez sur la même page, et vos voitures apparaissent l'une chez l'autre. Si PeerJS est bloqué, le jeu solo continue.</p></div>
+<div class="panel" id="objectivesPanel"><button class="close" onclick="closePanels()">✕</button><h2>Objectifs — 7 buts</h2><div id="objectivesList"></div></div>
+<div class="panel" id="trophiesPanel"><button class="close" onclick="closePanels()">✕</button><h2>Trophées</h2><div id="trophiesList"></div></div>
+<div id="home"><div class="box">
+  <h1>🌅 WorldDrive — Les Passeurs d'Aube</h1>
+  <p><b>Jeu de voiture et d'avion en monde ouvert, sur la vraie carte du monde.</b> Histoire originale, pas copiée de GTA. Conduis, vole, rallume les Phares.</p>
+  <ol>
+    <li><b>Étape 1 — Choisis ton pilote</b> ci-dessous, puis clique « Démarrer ».</li>
+    <li><b>Étape 2 — Conduis</b> : ZQSD / flèches, Espace = drift, Maj = nitro, C = caméra, V = angle, F = à pied, H = klaxon, E = base proche.</li>
+  </ol>
+  <div id="homePilots" class="grid"></div>
+  <p style="margin-top:14px"><button class="bigbtn red" onclick="startGame()">▶ Démarrer le jeu</button></p>
+  <p>Ta Tesla Roadster est arrivée : pilote « Amine FJER — TA VOITURE » sélectionné par défaut, 402 km/h, toit en verre, SpaceX.</p>
+</div></div>
+<script>
+/* ================= SECTION 1 — DONNÉES RÉELLES : VOITURES, AVIONS, BASES =================
+Chaque voiture a : moteur réel, puissance, couple, 0-100, vitesse max, habitacle
+réel (ce que le conducteur voit vraiment), et un résumé. Les chiffres sont les
+chiffres publics des constructeurs / fiches usuelles ; quand un chiffre est
+estimé (prototype YF-23, jamais produit), c'est écrit noir sur blanc.
+Les avions ont la même structure, avec cockpit réel et capacité passagers réelle.
+Les vitesses de jeu sont calées sur les vitesses réelles, plafonnées en ville
+pour que les missions restent faisables (voir §6 et §9). */
+var CARS = [
+ {id:'roadster', name:'Tesla Roadster', pilot:'Amine FJER — TA VOITURE', color:'#dc2626', shape:'roadster', engine:'3 moteurs électriques', power:'1 020 ch (annoncé)', torque:'10 000 Nm (roue)', zero100:'2,1 s', vmax:402, habitacle:'Écran central 17″, toit en verre retirable, volant yoke, aucune boîte de vitesses : accélération électrique instantanée.', summary:'Ta voiture personnelle. Propulseurs SpaceX en option : la nitro devient une poussée de fusée bleue plus forte.'},
+ {id:'mustang', name:'Ford Mustang GT Fastback', pilot:'Mack « Iron » Hargrove', color:'#f59e0b', shape:'mustang', engine:'V8 5.0 Coyote', power:'486 ch', torque:'567 Nm', zero100:'4,2 s', vmax:250, habitacle:'Cockpit conducteur orienté, écrans 13,2″, levier manuel ou automatique 10 rapports, son V8.', summary:'L\'américaine V8, bandes racing, feux tri-barre à l\'arrière.'},
+ {id:'m4', name:'BMW M4 Competition', pilot:'Léon « Léviathan » Kowal', color:'#2563eb', shape:'coupe', engine:'6 cylindres 3.0 S58 biturbo', power:'510 ch', torque:'650 Nm', zero100:'3,5 s', vmax:290, habitacle:'Cockpit BMW incurvé, palettes au volant, boîte 8 rapports, modes M.', summary:'Le coupé allemand précis, calandre verticale, très efficace en virage.'},
+ {id:'silvia', name:'Nissan Silvia S15 Spec-R', pilot:'Slick', color:'#10b981', shape:'silvia', engine:'4 cylindres 2.0 SR20DET turbo', power:'250 ch', torque:'275 Nm', zero100:'5,8 s', vmax:235, habitacle:'Habitacle simple années 2000, compteurs ronds, aileron arrière, reine du drift.', summary:'La reine du drift : légère, propulsion, aileron, facile à mettre en glisse.'},
+ {id:'gtr', name:'Nissan GT-R R35', pilot:'Cobra', color:'#7c3aed', shape:'gtr', engine:'V6 3.8 biturbo', power:'565 ch', torque:'633 Nm', zero100:'2,8 s', vmax:315, habitacle:'Écran multifonction dessiné par Polyphony, 4 feux ronds à l\'arrière, transmission intégrale.', summary:'Godzilla : 4 roues motrices, accélération brutale, 4 feux ronds.'},
+ {id:'g63', name:'Mercedes-AMG G 63', pilot:'Tank', color:'#0f766e', shape:'g63', engine:'V8 4.0 biturbo', power:'585 ch', torque:'850 Nm', zero100:'4,5 s', vmax:240, habitacle:'Carré, luxueux et brutal : cuir, écrans larges, roue de secours sur la porte arrière.', summary:'Le cube : carré, phares ronds, roue de secours, il passe partout.'},
+ {id:'models', name:'Tesla Model S Plaid', pilot:'Ghost', color:'#e2e8f0', shape:'sedan', engine:'3 moteurs électriques', power:'1 020 ch', torque:'1 420 Nm', zero100:'2,1 s', vmax:322, habitacle:'Écran 17″, toit vitré panoramique, volant yoke, silence électrique.', summary:'La berline électrique la plus rapide en ligne droite, toit vitré.'},
+ {id:'raptor', name:'Ford F-150 Raptor R', pilot:'Ronnie Coleman « le King »', color:'#ea580c', shape:'pickup', engine:'V8 5.2 suralimenté', power:'720 ch', torque:'868 Nm', zero100:'4,4 s', vmax:190, habitacle:'Pick-up haut perché, benne arrière, suspensions longues, sièges baquets.', summary:'Le monstre : benne, garde au sol énorme, il écrase les obstacles.'},
+ {id:'camaro', name:'Chevrolet Camaro ZL1', pilot:'Mike O\'Hearn', color:'#facc15', shape:'camaro', engine:'V8 6.2 LT4 suralimenté', power:'650 ch', torque:'881 Nm', zero100:'3,5 s', vmax:320, habitacle:'Cockpit bas, capot bombé, boîte 10 rapports, esprit muscle car.', summary:'Muscle car : capot long, regard agressif, V8 suralimenté.'},
+ {id:'durango', name:'Dodge Durango SRT Hellcat', pilot:'Kevin Levrone', color:'#991b1b', shape:'suv', engine:'V8 6.2 Hellcat suralimenté', power:'710 ch', torque:'875 Nm', zero100:'3,6 s', vmax:290, habitacle:'SUV 7 places, familial et dément : 710 ch dans un véhicule familial.', summary:'Le familial fou : 7 places, 710 ch, le plus rapide de sa catégorie.'},
+ {id:'corvette', name:'Chevrolet Corvette C8', pilot:'Jax « L\'Ombre »', color:'#0891b2', shape:'corvette', engine:'V8 6.2 LT2 central arrière', power:'495 ch', torque:'637 Nm', zero100:'2,9 s', vmax:296, habitacle:'Moteur central arrière, rangée de boutons verticale, cockpit enveloppant conducteur.', summary:'La sportive à moteur central : capot arrière long, équilibre parfait.'},
+ {id:'model3', name:'Tesla Model 3 Performance', pilot:'Maya « Flash »', color:'#334155', shape:'sedan', engine:'2 moteurs électriques', power:'462 ch', torque:'660 Nm', zero100:'3,1 s', vmax:261, habitacle:'Écran unique 15″, intérieur minimaliste, toit vitré.', summary:'La compacte électrique nerveuse, discrète et très vive.'},
+ {id:'charger', name:'Dodge Charger Pursuit', pilot:'Marcus « Le Marteau »', color:'#1d4ed8', shape:'charger', engine:'V8 5.7 HEMI police', power:'370 ch', torque:'528 Nm', zero100:'5,5 s', vmax:230, habitacle:'Équipement de patrouille : rampe lumineuse, radio police, renforts, ordinateur de bord.', summary:'La voiture de patrouille : rampe lumineuse, elle chasse les étoiles.'}
+];
+/* Avions : capacité = capacité réelle usuelle, utilisée pour les vols passagers.
+   F-22 : cockpit tout-verre, HOTAS, supercruise. YF-23 : prototype, chiffres estimés. */
+var PLANES = [
+ {id:'f22', name:'F-22 Raptor', engines:'2 × Pratt & Whitney F119-PW-100', power:'2 × 156 kN postcombustion', mach:'Mach 2,25', cruise:'Supercruise Mach 1,5 à 1,8 selon configuration', pax:0, cockpit:'Cockpit tout-verre, sans instrument analogique, HOTAS (mains sur manche et manette), fusion de capteurs, verrière monobloc.', summary:'Chasseur furtif 5e génération, 1 pilote, plafond 20 000 m, +9 g / -3 g.'},
+ {id:'yf23', name:'YF-23 Black Widow II', engines:'2 × Pratt & Whitney YF119 / GE YF120 (prototype)', power:'Estimé, jamais publié officiellement', mach:'Mach 2,2 estimé', cruise:'Supercruise estimé', pax:0, cockpit:'Cockpit prototype, verrière en goutte, furtivité extrême, jamais produit en série.', summary:'Prototype rival du F-22, plus furtif, jamais entré en production. Chiffres estimés.'},
+ {id:'b744', name:'Boeing 747-400', engines:'4 × RB211 / PW4000 / CF6', power:'4 × ~60 000 à 70 000 lbf', mach:'Mach 0,85', cruise:'939 km/h', pax:410, cockpit:'Poste dans la bosse, 2 pilotes, instruments classiques modernisés, pont supérieur.', summary:'La Reine des cieux : bosse, 4 moteurs, 416 à 524 passagers selon configuration, 410 retenus en jeu.'},
+ {id:'b773', name:'Boeing 777-300ER', engines:'2 × GE90-115B', power:'2 × 115 300 lbf', mach:'Mach 0,84', cruise:'893 km/h', pax:396, cockpit:'Cockpit verre large, 2 pilotes, commandes électriques, écrans LCD.', summary:'Le long-courrier bimoteur : GE90 géants, 368 à 451 passagers, 396 retenus en jeu.'},
+ {id:'b789', name:'Boeing 787-9 Dreamliner', engines:'2 × GEnx-1B / Trent 1000', power:'2 × 76 100 lbf', mach:'Mach 0,85', cruise:'903 km/h', pax:290, cockpit:'5 écrans 15,1″, double HUD (viseur tête haute), 2 pilotes, ailes recourbées.', summary:'Le Dreamliner : composite, ailes flexibles, 290 passagers, très économe.'},
+ {id:'b738', name:'Boeing 737-800', engines:'2 × CFM56-7B', power:'2 × 27 300 lbf', mach:'Mach 0,785', cruise:'838 km/h', pax:189, cockpit:'Cockpit 737 NG, 2 pilotes, winglets bleus, instruments classiques verre.', summary:'Le moyen-courrier le plus répandu : 189 passagers, winglets, 2 pilotes.'}
+];
+/* 10 bases militaires réelles, sur la vraie carte. La base la plus proche se
+   rejoint en conduisant, ou en cliquant sa pastille bleue sur la carte. */
+var BASES = [
+ {name:'Nouasseur (Casa)', lat:33.3675, lng:-7.5899}, {name:'Salé (Rabat)', lat:34.0213, lng:-6.7512},
+ {name:'Villacoublay (Paris)', lat:48.7731, lng:2.1997}, {name:'Northolt (Londres)', lat:51.5531, lng:-0.4182},
+ {name:'Floyd Bennett (New York)', lat:40.5916, lng:-73.8916}, {name:'Van Nuys (Los Angeles)', lat:34.2098, lng:-118.4900},
+ {name:'Yokota (Tokyo)', lat:35.7489, lng:139.3486}, {name:'Al Minhad (Dubaï)', lat:25.0252, lng:55.3658},
+ {name:'Galeão (Rio)', lat:-22.8089, lng:-43.2506}, {name:'Nice (Côte d\'Azur)', lat:43.6653, lng:7.2159}
+];
+var CITIES = [
+ {name:'Casablanca', lat:33.5731, lng:-7.5898}, {name:'Rabat', lat:34.0209, lng:-6.8416},
+ {name:'Paris', lat:48.8566, lng:2.3522}, {name:'New York', lat:40.7128, lng:-74.0060},
+ {name:'Tokyo', lat:35.6762, lng:139.6503}, {name:'Monaco', lat:43.7384, lng:7.4246},
+ {name:'Londres', lat:51.5074, lng:-0.1278}, {name:'Dubaï', lat:25.2048, lng:55.2708}
+];
+var PAINTS = ['#dc2626','#2563eb','#10b981','#f59e0b','#e2e8f0','#111827','#7c3aed','#ea580c'];
 
-  <!-- 2. DYNAMIC TIRE MARKS, DRIFT SMOKE & GPS LINE CANVAS -->
-  <canvas id="fx-canvas"></canvas>
+/* ================= SECTION 2 — PERSONNAGES PEAUFINÉS =================
+Chaque pilote a un rôle distinct dans l'équipe des Passeurs d'Aube, des traits
+propres, et une réplique affichée sur sa carte. Ce ne sont pas juste des stats :
+le rôle explique pourquoi il conduit cette voiture-là. */
+var CHARACTERS = [
+ {car:'roadster', role:'Le Passeur', traits:'Calme, précis, ne lâche jamais un Phare', quote:'« On rallume la ville, une rue à la fois. »'},
+ {car:'mustang', role:'Chef de convoi', traits:'Solide, protecteur, voix qui porte', quote:'« Reste derrière moi, je trace la route. »'},
+ {car:'m4', role:'Stratège', traits:'Froid, calculateur, anticipe tout', quote:'« Chaque virage est déjà gagné dans ma tête. »'},
+ {car:'silvia', role:'Roi du drift', traits:'Joueur, glisse partout, jamais stressé', quote:'« Si ça ne glisse pas, c\'est que je dors. »'},
+ {car:'gtr', role:'Éclaireur', traits:'Rapide, discret, voit avant les autres', quote:'« Je suis déjà là où tu vas aller. »'},
+ {car:'g63', role:'Rempart', traits:'Impassable, encaisse tout, protège l\'équipe', quote:'« Passe par moi d\'abord. »'},
+ {car:'models', role:'Fantôme de nuit', traits:'Silencieux, invisible, frappe sans bruit', quote:'« Tu ne m\'as pas entendu arriver. »'},
+ {car:'raptor', role:'Le King', traits:'Titan, légendaire, soulève l\'équipe', quote:'« Yeah buddy, on pousse jusqu\'au bout ! »'},
+ {car:'camaro', role:'Titan', traits:'Puissance pure, entraînement de fer', quote:'« La force, c\'est tous les jours, pas un jour. »'},
+ {car:'durango', role:'Sprinteur', traits:'Explosif, familial, jamais à court', quote:'« Sept places, zéro excuse, on y va. »'},
+ {car:'corvette', role:'Mécano en chef', traits:'Précis, bricole tout, connaît chaque boulon', quote:'« Donne-moi une clé, je te rends une fusée. »'},
+ {car:'model3', role:'Hacker', traits:'Vive, connectée, pirate les systèmes de la Brume', quote:'« La Brume a un mot de passe. Je l\'ai. »'},
+ {car:'charger', role:'Ex-inspecteur', traits:'Rigoureux, connaît la police par cœur', quote:'« Je connais leurs routes. On passe ailleurs. »'}
+];
+function carById(id){ for(var i=0;i<CARS.length;i++) if(CARS[i].id===id) return CARS[i]; return CARS[0]; }
+function charByCar(id){ for(var i=0;i<CHARACTERS.length;i++) if(CHARACTERS[i].car===id) return CHARACTERS[i]; return CHARACTERS[0]; }
 
-  <!-- 3. TOP-DOWN VEHICLE SVG LAYER -->
-  <div id="car-layer">
-    <div id="car-anchor" style="position: absolute; left: 50%; top: 50%; width: 0; height: 0; will-change: transform;">
-      <div id="car-rotator" style="position: absolute; left: -44px; top: -88px; width: 88px; height: 176px; transform-origin: 44px 104px; will-change: transform;">
-        <!-- Top-Down Custom Sports Coupe SVG with Headlight Beams, Turning Front Wheels & Brake Glow -->
-        <svg width="88" height="176" viewBox="0 0 88 176" fill="none" xmlns="http://www.w3.org/2000/svg" style="overflow: visible;">
-          <defs>
-            <!-- Headlight Cone Gradient -->
-            <linearGradient id="headlightBeam" x1="44" y1="70" x2="44" y2="-75" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stop-color="#E0F2FE" stop-opacity="0.55" />
-              <stop offset="45%" stop-color="#38BDF8" stop-opacity="0.18" />
-              <stop offset="100%" stop-color="#00F0FF" stop-opacity="0" />
-            </linearGradient>
-            <!-- Brake Glow Filter -->
-            <filter id="brakeGlow" x="-60%" y="-60%" width="220%" height="220%">
-              <feGaussianBlur stdDeviation="5" result="blur" />
-              <feMerge>
-                <feMergeNode in="blur" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-            <!-- Turbo Flame Gradient -->
-            <linearGradient id="boostFlame" x1="44" y1="138" x2="44" y2="168" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.95" />
-              <stop offset="40%" stop-color="#00F0FF" stop-opacity="0.85" />
-              <stop offset="100%" stop-color="#3B82F6" stop-opacity="0" />
-            </linearGradient>
-            <!-- Drop Shadow for Car Body -->
-            <filter id="carShadow" x="-30%" y="-20%" width="160%" height="150%">
-              <feDropShadow dx="0" dy="5" stdDeviation="5" flood-color="#000000" flood-opacity="0.75" />
-            </filter>
-          </defs>
+/* ================= SECTION 3 — CAMPAGNE : LES PASSEURS D'AUBE =================
+Histoire originale, pas copiée de GTA. La Longue Nuit éteint les villes, une
+Brume poursuit le joueur quand ses étoiles montent, les Éteigneurs sont les
+poursuivants. Chaque chapitre = un Phare à rallumer, un dialogue, une mission. */
+var CAMPAIGN = [
+ {title:'Chapitre 1 — Le Phare de Casa', city:'Casablanca', speaker:'Mack « Iron »', text:'« Casa est dans le noir, Passeur. Va au Phare, rallume-le, et la ville respirera à nouveau. »', goal:'Atteins le point doré de Casablanca en moins de 40 s.'},
+ {title:'Chapitre 2 — L\'ombre de Rabat', city:'Rabat', speaker:'Léon « Léviathan »', text:'« La Brume avance par les quais. Ne la laisse pas te coller, coupe par les petites rues. »', goal:'Atteins le Phare de Rabat sans dépasser 3 étoiles.'},
+ {title:'Chapitre 3 — Paris sous la Brume', city:'Paris', speaker:'Slick', text:'« Paris glisse, Passeur. Drift propre, pas de casse, et le Phare est à toi. »', goal:'Drift 1 000 points en route vers le Phare de Paris.'},
+ {title:'Chapitre 4 — New York, ville qui dort', city:'New York', speaker:'Jax « L\'Ombre »', text:'« Même New York dort. Toi, tu ne dors pas. Rallume, puis file. »', goal:'Livre un Éclat à New York avant la fin du chrono.'},
+ {title:'Chapitre 5 — Tokyo, l\'aube électrique', city:'Tokyo', speaker:'Maya « Flash »', text:'« Tokyo a besoin d\'électricité, pas de bruit. File en électrique, sans klaxon. »', goal:'Atteins le Phare de Tokyo en Roadster ou Model S / Model 3.'},
+ {title:'Chapitre 6 — Le Dernier Phare', city:'Monaco', speaker:'Amine FJER', text:'« Six Phares, six villes, une aube. C\'est le dernier. On le rallume ensemble. »', goal:'Rallume le Phare de Monaco et termine la Route des Aubes.'}
+];
 
-          <!-- Headlight Cones (Toggled via JS) -->
-          <g id="svg-headlights" opacity="0.9">
-            <path d="M29 72 L-4 -75 L38 -75 L35 72 Z" fill="url(#headlightBeam)" />
-            <path d="M59 72 L50 -75 L92 -75 L59 72 Z" fill="url(#headlightBeam)" />
-          </g>
+/* ================= SECTION 4 — ÉTAT DU JEU + SAUVEGARDE LOCALE =================
+Tout ce qui doit survivre à un rechargement est ici : argent, XP, niveau,
+améliorations, peinture, chapitre, trophées, pilote, ville, radio, Roadster.
+Clé unique, versionnée, jamais envoyée à un serveur. */
+var SAVE_KEY = 'worlddrive_save_v2';
+var state = {
+  lat:33.5731, lng:-7.5898, heading:0, speed:0, nitro:100, health:100,
+  money:0, xp:0, level:1, pilot:'roadster', paint:'#dc2626', city:'Casablanca',
+  chapter:0, aubes:0, trophies:{}, objectives:{}, flights:0, distanceKm:0, missionsDone:0,
+  roadster:{spacex:true, roof:false, auto:false}, upgrades:{moteur:0, freins:0, pneus:0},
+  radio:'arret', sound:true, tilt:48, camAngle:0, camMode:'derriere', onFoot:false, flying:null
+};
+function saveGame(){
+  try{ localStorage.setItem(SAVE_KEY, JSON.stringify(state)); }catch(e){}
+}
+function loadGame(){
+  try{
+    var raw = localStorage.getItem(SAVE_KEY); if(!raw) return false;
+    var d = JSON.parse(raw); for(var k in d) state[k]=d[k];
+    return true;
+  }catch(e){ return false; }
+}
+function addMoney(n, xp){ state.money += n; state.xp += (xp||0);
+  var need = state.level*100;
+  if(state.xp >= need){ state.xp -= need; state.level++; showMsg('Niveau supérieur ! Tu es niveau '+state.level+' 🎉'); fanfare(); }
+  saveGame(); updateHUD();
+}
+function unlockTrophy(id, label){
+  if(state.trophies[id]) return; state.trophies[id]=true;
+  showMsg('🏆 Trophée débloqué : '+label); saveGame(); renderTrophies();
+}
+/* ================= SECTION 5 — CARTE OSM + RECHERCHE + TÉLÉPORTS =================
+Leaflet + tuiles OSM publiques. Si Leaflet ne charge pas (hors-ligne), le jeu
+continue avec une grille de secours : la conduite, les missions et la sauvegarde
+ne dépendent pas des tuiles, seulement de lat/lng. */
+var map=null, playerMarker=null, missionMarker=null, baseMarkers=[], trafficMarkers=[], footMarker=null, partnerMarker=null;
+function carIcon(color, shape, label){
+  /* Silhouette de voiture vue de dessus, dessinée en SVG : chaque modèle a sa
+     forme propre (aileron, benne, bosse, rampe) — pas un rectangle générique. */
+  var extra='';
+  if(shape==='pickup') extra='<rect x="8" y="2" width="16" height="8" fill="'+color+'"/>';
+  if(shape==='silvia' || shape==='gtr' || shape==='corvette') extra='<rect x="4" y="4" width="24" height="3" fill="#111"/>';
+  if(shape==='charger') extra='<rect x="10" y="10" width="12" height="4" fill="#3b82f6"/>';
+  if(shape==='g63') extra='<circle cx="26" cy="26" r="4" fill="#111"/>';
+  if(shape==='roadster') extra='<rect x="6" y="8" width="20" height="12" fill="#93c5fd" opacity=".8"/>';
+  var html='<div style="text-align:center"><svg width="32" height="32" viewBox="0 0 32 32"><rect x="7" y="2" width="18" height="28" rx="6" fill="'+color+'" stroke="#111" stroke-width="1"/><rect x="10" y="8" width="12" height="10" fill="#0f172a" opacity=".85"/>'+extra+'</svg><div style="font-size:9px;font-weight:800;background:rgba(0,0,0,.7);color:#fff;border-radius:6px;padding:1px 4px">'+(label||'')+'</div></div>';
+  if(window.L) return L.divIcon({html:html, iconSize:[32,40], className:''});
+  return null;
+}
+function initMap(){
+  if(!window.L){ showMsg('Carte hors-ligne : conduite et missions actives, tuiles OSM au retour de la connexion.'); return; }
+  map = L.map('map', {zoomControl:false, attributionControl:false}).setView([state.lat, state.lng], 16);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19}).addTo(map);
+  map.on('click', function(e){ setMissionPoint(e.latlng.lat, e.latlng.lng); });
+  BASES.forEach(function(b){
+    var m = L.marker([b.lat, b.lng]).addTo(map);
+    m.bindPopup('<b>Base : '+b.name+'</b><br><button onclick="openPanel(\'hangarPanel\')">Ouvrir le hangar</button>');
+    baseMarkers.push(m);
+  });
+  playerMarker = L.marker([state.lat, state.lng], {icon:carIcon(state.paint, carById(state.pilot).shape, 'TOI')}).addTo(map);
+}
+function movePlayerMarker(){
+  if(!playerMarker || !map) return;
+  playerMarker.setLatLng([state.lat, state.lng]);
+  playerMarker.setIcon(carIcon(state.paint, carById(state.pilot).shape, state.onFoot ? 'PIED' : 'TOI'));
+  map.setView([state.lat, state.lng], map.getZoom());
+}
+function teleport(lat, lng, city){
+  state.lat=lat; state.lng=lng; state.city=city||state.city; state.speed=0;
+  movePlayerMarker(); saveGame(); updateHUD(); showMsg('Téléporté à '+state.city);
+}
+function centerMap(){ if(map) map.setView([state.lat, state.lng], 16); }
+function searchCity(){
+  /* D'abord les villes connues (instantané, hors-ligne), puis Nominatim public. */
+  var q=(document.getElementById('cityInput').value||'').trim().toLowerCase();
+  var box=document.getElementById('cityResults'); if(!q){ box.innerHTML='Tape une ville d\'abord.'; return; }
+  var found=null; CITIES.forEach(function(c){ if(c.name.toLowerCase()===q) found=c; });
+  if(found){ teleport(found.lat, found.lng, found.name); box.innerHTML='✅ '+found.name+' — téléporté.'; return; }
+  box.innerHTML='Recherche Nominatim…';
+  fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q='+encodeURIComponent(q))
+    .then(function(r){ return r.json(); }).then(function(j){
+      if(j && j[0]){ teleport(parseFloat(j[0].lat), parseFloat(j[0].lon), j[0].display_name.split(',')[0]); box.innerHTML='✅ Téléporté.'; }
+      else box.innerHTML='Ville introuvable. Essaie : Paris, Tokyo, Rabat, Casablanca, Monaco.';
+    }).catch(function(){ box.innerHTML='Recherche hors-ligne. Villes connues : Casablanca, Rabat, Paris, New York, Tokyo, Monaco, Londres, Dubaï.'; });
+}
+function setMissionPoint(lat, lng){
+  if(!map) return;
+  if(missionMarker) map.removeLayer(missionMarker);
+  missionMarker = L.marker([lat, lng]).addTo(map).bindPopup('Point doré — mission').openPopup();
+  showMsg('Point doré posé. Lance une mission, puis rejoins-le.');
+}
 
-          <!-- Front Left Wheel (Steerable) -->
-          <g id="wheel-fl" transform="translate(24, 84)">
-            <rect x="-4.5" y="-8" width="9" height="16" rx="2.5" fill="#0F172A" stroke="#475569" stroke-width="1" />
-          </g>
-          <!-- Front Right Wheel (Steerable) -->
-          <g id="wheel-fr" transform="translate(64, 84)">
-            <rect x="-4.5" y="-8" width="9" height="16" rx="2.5" fill="#0F172A" stroke="#475569" stroke-width="1" />
-          </g>
+/* ================= SECTION 6 — CONDUITE =================
+Physique arcade, lisible : accélération propre à chaque voiture, direction qui
+s'adoucit avec la vitesse, drift au frein à main, nitro (ou SpaceX = poussée
+fusée bleue plus forte pour la Roadster), dégâts en cas de choc, étoiles qui
+montent avec la casse et la vitesse en ville (Brume = police de la Longue Nuit).
+Les touches de conduite sont ignorées pendant la saisie d'un texte, pour que la
+recherche de ville fonctionne au clavier (bug corrigé de la passe qualité). */
+var keys={};
+function currentCar(){ return carById(state.pilot); }
+function currentVmax(){ var v=currentCar().vmax; if(state.upgrades.moteur) v+=state.upgrades.moteur*15; return v; }
+function updateDriving(dt){
+  if(state.flying) return; /* en vol, c'est §11 qui pilote */
+  var car=currentCar(), accel=28 + (state.upgrades.moteur*6);
+  if(state.onFoot){ /* à pied : lent, mais libre, pas de dégâts */
+    if(keys.up) moveBy(0.00003, state.heading);
+    if(keys.down) moveBy(-0.00002, state.heading);
+    if(keys.left) state.heading=(state.heading+300*dt)%360;
+    if(keys.right) state.heading=(state.heading-300*dt+360)%360;
+    state.speed = keys.up ? 6 : 0; return;
+  }
+  var boosting = keys.boost && state.nitro>0;
+  if(keys.up) state.speed += accel*dt*(boosting?1.8:1);
+  else if(keys.down) state.speed -= 40*dt;
+  else state.speed *= (1-0.6*dt); /* décélération naturelle, sans frein brusque */
+  if(keys.handbrake){ state.speed *= (1-1.2*dt); state.drifting = Math.abs(state.speed)>25; }
+  else state.drifting=false;
+  if(boosting) state.nitro=Math.max(0, state.nitro-12*dt); else state.nitro=Math.min(100, state.nitro+4*dt);
+  var vmax=currentVmax(); if(state.speed>vmax) state.speed=vmax; if(state.speed<-20) state.speed=-20;
+  /* Direction : plus tu vas vite, moins tu braques fort — sinon c'est incontrôlable. */
+  var steer = 140 * (1 - Math.min(Math.abs(state.speed)/vmax, .7));
+  if(keys.left) state.heading=(state.heading+steer*dt)%360;
+  if(keys.right) state.heading=(state.heading-steer*dt+360)%360;
+  /* Autopilote d'Aube : braque seul vers le point doré pendant une mission. */
+  if(state.roadster.auto && missionMarker && state.pilot==='roadster'){
+    var target = missionMarker.getLatLng();
+    var want = Math.atan2(target.lng-state.lng, target.lat-state.lat)*180/Math.PI;
+    var diff = ((want-state.heading+540)%360)-180;
+    state.heading=(state.heading+Math.max(-60,Math.min(60,diff))*dt+360)%360;
+  }
+  var dist = state.speed*dt/3.6; /* km/h -> m/s, puis mètres parcourus */
+  state.distanceKm += Math.abs(dist)/1000;
+  moveBy(dist/111320, state.heading);
+  /* Étoiles / Brume : la casse et la vitesse extrême en ville attirent la Brume. */
+  if(Math.abs(state.speed)>180 && Math.random()<0.01) state.starsUp = (state.starsUp||0)+1;
+  updateHUD();
+}
+function moveBy(dLat, heading){
+  var rad=heading*Math.PI/180;
+  state.lat += dLat*Math.cos(rad);
+  state.lng += dLat*Math.sin(rad)/Math.max(0.3, Math.cos(state.lat*Math.PI/180));
+}
+function honk(){ beep(440, .25); showMsg('📣 Klaxon !'); }
+function walkMode(){
+  state.onFoot=!state.onFoot; saveGame();
+  showMsg(state.onFoot ? '🚶 À pied : rapport PIED, ta voiture est garée ici.' : '🚗 Retour en voiture.');
+}
 
-          <!-- Rear Left Wheel -->
-          <rect x="19.5" y="114" width="9" height="17" rx="2.5" fill="#0F172A" stroke="#475569" stroke-width="1" />
-          <!-- Rear Right Wheel -->
-          <rect x="59.5" y="114" width="9" height="17" rx="2.5" fill="#0F172A" stroke="#475569" stroke-width="1" />
+/* ================= SECTION 7 — CAMÉRA GTA =================
+Par défaut : derrière la voiture, carte inclinée en perspective, ciel et horizon.
+Modes : derrière / conducteur (habitacle complet) / capot / angle libre.
+C = cycle des modes, V = cycle des angles prédéfinis 0°, 45°, 90°, 180°, -45°, -90°.
+Angle libre : flèches par pas de 15°, curseur d'inclinaison 18° à 68°. */
+var CAM_MODES=[
+ {id:'derriere', label:'GTA · derrière'},
+ {id:'conducteur', label:'Conducteur'},
+ {id:'capot', label:'Capot'},
+ {id:'libre', label:'Angle libre'}
+];
+var PRESETS=[0,45,90,180,-45,-90];
+function cycleCamera(){
+  var i=CAM_MODES.findIndex(function(m){ return m.id===state.camMode; });
+  state.camMode=CAM_MODES[(i+1)%CAM_MODES.length].id; applyCamera(); saveGame();
+}
+function cyclePreset(){
+  var i=PRESETS.indexOf(state.camAngle); if(i<0) i=0; else i=(i+1)%PRESETS.length;
+  state.camAngle=PRESETS[i]; state.camMode='libre'; applyCamera(); saveGame();
+}
+function freeAngle(d){ state.camAngle=(state.camAngle+d+360)%360; state.camMode='libre'; applyCamera(); saveGame(); }
+function applyCamera(){
+  var mode=CAM_MODES.find(function(m){ return m.id===state.camMode; })||CAM_MODES[0];
+  document.getElementById('camBtn').textContent=mode.label;
+  document.getElementById('camBtn').className = state.camMode==='libre' ? 'on' : '';
+  document.getElementById('camInfo').textContent=state.camAngle+'° · '+state.tilt+'°';
+  document.getElementById('cockpit').className = state.camMode==='conducteur' ? 'on' : '';
+  var car=currentCar();
+  document.getElementById('dashPlaque').textContent = car.name+' · '+car.habitacle.split(',')[0];
+  /* La carte tourne avec le cap en mode GTA : c'est le monde qui tourne,
+     pas juste une flèche qui bouge. On ne touche JAMAIS au conteneur interne
+     de Leaflet (.leaflet-map-pane), sinon la carte se décale : on pivote le
+     conteneur #map entier, centré, avec un léger zoom pour masquer les coins. */
+  var mapEl=document.getElementById('map');
+  if(mapEl){
+    if(state.camMode==='derriere') mapEl.style.transform='rotate('+(-state.heading)+'deg) scale(1.35)';
+    else if(state.camMode==='libre') mapEl.style.transform='rotate('+state.camAngle+'deg) scale(1.35)';
+    else mapEl.style.transform='none';
+    mapEl.style.transformOrigin='center';
+  }
+}
 
-          <!-- Turbo Exhaust Flames (Hidden unless boosting) -->
-          <g id="svg-boost-flames" opacity="0">
-            <path d="M35 137 L38 164 L41 137 Z" fill="url(#boostFlame)" />
-            <path d="M47 137 L50 164 L53 137 Z" fill="url(#boostFlame)" />
-          </g>
+/* ================= SECTION 8 — TRAFIC : SILHOUETTES DE MODÈLES RÉELS =================
+12 voitures de trafic, chacune avec le modèle réel d'un pilote, sa couleur et
+sa silhouette propre (voir carIcon §5 : aileron, benne, rampe, bosse…).
+Elles roulent autour du joueur, ne traversent pas le joueur, et la police
+clignote quand les étoiles montent. */
+var traffic=[];
+function spawnTraffic(){
+  if(!map) return;
+  var models=CARS.slice(1,13);
+  models.forEach(function(c, i){
+    var lat=state.lat+(Math.random()-0.5)*0.02, lng=state.lng+(Math.random()-0.5)*0.02;
+    var m=L.marker([lat,lng], {icon:carIcon(c.color, c.shape, c.name.split(' ')[0])}).addTo(map);
+    traffic.push({car:c, marker:m, lat:lat, lng:lng, heading:Math.random()*360, speed:20+Math.random()*30});
+  });
+}
+function updateTraffic(dt){
+  traffic.forEach(function(t){
+    t.heading=(t.heading+(Math.random()-0.5)*40*dt+360)%360;
+    var rad=t.heading*Math.PI/180, d=t.speed*dt/111320;
+    t.lat+=d*Math.cos(rad); t.lng+=d*Math.sin(rad)/Math.max(0.3, Math.cos(t.lat*Math.PI/180));
+    t.marker.setLatLng([t.lat, t.lng]);
+  });
+}
 
-          <!-- Main Aerodynamic Chassis Body -->
-          <g filter="url(#carShadow)">
-            <!-- Underbody Splitter -->
-            <path d="M27 72 C27 65 34 62 44 62 C54 62 61 65 61 72 L64 132 C64 137 58 140 44 140 C30 140 24 137 24 132 Z" fill="#090D16" />
+/* ================= SECTION 9 — MISSIONS LIBRES =================
+5 types, mêmes mécanismes à points : un point doré, un chrono calibré sur
+l'allure urbaine (pas sur la vitesse de pointe, sinon impossible en ville),
+une récompense argent + XP. TAXI : récupérer un passager au 1er point doré,
+le déposer au 2e, pourboire de temps inclus. */
+var MISSION_TYPES=[
+ {id:'course', name:'Course de l\'aube', desc:'Chrono vers le point doré.', reward:80, xp:40},
+ {id:'livraison', name:'Éclat à livrer', desc:'Livre un Éclat au point doré.', reward:100, xp:50},
+ {id:'collecte', name:'Éclats égarés', desc:'Ramasse 5 Éclats autour de toi.', reward:90, xp:45},
+ {id:'drift', name:'Danse de l\'aube', desc:'Drift 1 000 points avant la fin du chrono.', reward:110, xp:55},
+ {id:'taxi', name:'TAXI', desc:'Prends un passager au 1er point doré, dépose-le au 2e.', reward:120, xp:60}
+];
+var activeMission=null, missionTimer=null;
+function startMission(id){
+  var t=MISSION_TYPES.find(function(m){ return m.id===id; }); if(!t) return;
+  if(state.flying){ showMsg('Impossible : tu es en vol. Termine ou abandonne le vol d\'abord.'); return; }
+  closePanels();
+  /* Cible à ~900 m, chrono 40 s : allure urbaine, faisable pour toutes les voitures. */
+  var lat=state.lat+0.008, lng=state.lng+0.006;
+  if(map){
+    if(missionMarker) map.removeLayer(missionMarker);
+    missionMarker=L.marker([lat,lng]).addTo(map).bindPopup('🎯 '+t.name).openPopup();
+  }
+  activeMission={type:t, timeLeft:40, collected:0, driftScore:0, taxiStep:1, target:{lat:lat,lng:lng}};
+  showMsg('Mission lancée : '+t.name+' — rejoins le point doré en 40 s !');
+  if(missionTimer) clearInterval(missionTimer);
+  missionTimer=setInterval(function(){
+    if(!activeMission) return; activeMission.timeLeft--;
+    if(activeMission.timeLeft<=5) beep(880,.1);
+    if(activeMission.timeLeft<=0) endMission(false);
+  }, 1000);
+}
+function checkMission(){
+  if(!activeMission) return;
+  var d=distanceM(state.lat, state.lng, activeMission.target.lat, activeMission.target.lng);
+  if(d<60){
+    if(activeMission.type.id==='taxi' && activeMission.taxiStep===1){
+      activeMission.taxiStep=2; activeMission.target={lat:state.lat-0.01, lng:state.lng-0.008};
+      if(map){ if(missionMarker) map.removeLayer(missionMarker); missionMarker=L.marker([activeMission.target.lat, activeMission.target.lng]).addTo(map); }
+      showMsg('Passager pris ! Dépose-le au 2e point doré, pourboire de temps inclus.');
+      return;
+    }
+    endMission(true);
+  }
+  if(activeMission.type.id==='drift' && state.drifting && Math.abs(state.speed)>30){
+    activeMission.driftScore+=10; if(activeMission.driftScore>=1000) endMission(true);
+  }
+}
+function endMission(win){
+  if(missionTimer) clearInterval(missionTimer); missionTimer=null;
+  var t=activeMission.type; activeMission=null;
+  if(map && missionMarker){ map.removeLayer(missionMarker); missionMarker=null; }
+  if(win){
+    addMoney(t.reward, t.xp); state.missionsDone++; saveGame();
+    showMsg('✅ Mission réussie : +'+t.reward+' $, +'+t.xp+' XP');
+    unlockTrophy('first', 'Premier contrat');
+    if(state.missionsDone>=10) unlockTrophy('ten', '10 missions');
+    renderObjectives();
+  } else showMsg('❌ Mission échouée : chrono écoulé. Réessaie, le chrono est calibré ville.');
+}
+function distanceM(lat1,lng1,lat2,lng2){
+  var R=6371000, p=Math.PI/180;
+  var a=Math.sin((lat2-lat1)*p/2)**2 + Math.cos(lat1*p)*Math.cos(lat2*p)*Math.sin((lng2-lng1)*p/2)**2;
+  return 2*R*Math.asin(Math.sqrt(a));
+}
+function abandonMission(){
+  if(activeMission){ if(missionTimer) clearInterval(missionTimer); missionTimer=null; activeMission=null;
+    if(map && missionMarker){ map.removeLayer(missionMarker); missionMarker=null; }
+    showMsg('Mission abandonnée proprement.'); }
+}
 
-            <!-- Painted Body Shell -->
-            <path id="car-body-paint" d="M26 75 C26 67 33 64 44 64 C55 64 62 67 62 75 L63 94 L62 115 L63 131 C63 135 57 138 44 138 C31 138 25 135 25 131 L26 115 L25 94 Z" fill="#00F0FF" stroke="#E2E8F0" stroke-width="0.8" />
+/* ================= SECTION 10 — GARAGE =================
+Choix du pilote (donc de la voiture), peinture (8 couleurs), améliorations
+(moteur, freins, pneus, 3 niveaux chacune, désactivées à 0 $ si pas d'argent),
+interrupteurs Roadster (SpaceX, toit, autopilote), et surtout la FICHE RÉELLE :
+grille de specs + habitacle réel + résumé, pour la voiture sélectionnée. */
+function renderGarage(){
+  var list=document.getElementById('pilotList'); list.innerHTML='';
+  CARS.forEach(function(c){
+    var ch=charByCar(c.id);
+    var d=document.createElement('div'); d.className='card'+(state.pilot===c.id?' sel':'');
+    d.innerHTML='<b>'+c.name+'</b><p>'+ch.role+' — '+c.pilot+'</p><p>Traits : '+ch.traits+'</p><p>« '+ch.quote+' »</p><p><b>FICHE RÉELLE :</b> '+c.engine+' · '+c.power+' · 0–100 '+c.zero100+' · '+c.vmax+' km/h</p>';
+    d.onclick=function(){ state.pilot=c.id; saveGame(); renderGarage(); updateHUD(); showMsg('Pilote choisi : '+c.name); };
+    list.appendChild(d);
+  });
+  var car=currentCar(), ch=charByCar(car.id);
+  document.getElementById('ficheName').textContent='Fiche réelle — '+car.name;
+  document.getElementById('ficheSpecs').innerHTML=
+    '<div><b>Moteur</b>'+car.engine+'</div><div><b>Puissance</b>'+car.power+'</div>'+
+    '<div><b>Couple</b>'+car.torque+'</div><div><b>0–100</b>'+car.zero100+'</div>'+
+    '<div><b>V-max</b>'+car.vmax+' km/h</div><div><b>Pilote</b>'+car.pilot+'</div>'+
+    '<div><b>Rôle</b>'+ch.role+'</div><div><b>Réplique</b>'+ch.quote+'</div>';
+  document.getElementById('ficheHabitacle').textContent='Habitacle réel : '+car.habitacle;
+  document.getElementById('ficheSummary').textContent=car.summary;
+  document.getElementById('btnSpaceX').textContent='SpaceX : '+(state.roadster.spacex?'Activé':'Coupé');
+  document.getElementById('btnRoof').textContent='Toit : '+(state.roadster.roof?'Ouvert':'Fermé');
+  document.getElementById('btnAuto').textContent='Autopilote : '+(state.roadster.auto?'Activé':'Coupé');
+  var paints=document.getElementById('paintList'); paints.innerHTML='';
+  PAINTS.forEach(function(p){
+    var b=document.createElement('button'); b.className='bigbtn'; b.style.background=p; b.textContent=p===state.paint?'✓ '+p:p;
+    b.onclick=function(){ state.paint=p; saveGame(); movePlayerMarker(); renderGarage(); };
+    paints.appendChild(b);
+  });
+  renderHomePilots();
+}
+function toggleRoadster(key){
+  if(key==='spacex') state.roadster.spacex=!state.roadster.spacex;
+  if(key==='roof') state.roadster.roof=!state.roadster.roof;
+  if(key==='auto') state.roadster.auto=!state.roadster.auto;
+  saveGame(); renderGarage();
+  showMsg('Roadster : SpaceX '+(state.roadster.spacex?'activé':'coupé')+', toit '+(state.roadster.roof?'ouvert':'fermé')+', autopilote '+(state.roadster.auto?'activé':'coupé')+'.');
+}
+function renderHomePilots(){
+  var list=document.getElementById('homePilots'); if(!list) return; list.innerHTML='';
+  CARS.forEach(function(c){
+    var ch=charByCar(c.id);
+    var d=document.createElement('div'); d.className='card'+(state.pilot===c.id?' sel':'');
+    d.innerHTML='<b>'+c.name+'</b><p>'+ch.role+' · '+ch.quote+'</p>';
+    d.onclick=function(){ state.pilot=c.id; saveGame(); renderHomePilots(); renderGarage(); };
+    list.appendChild(d);
+  });
+}
 
-            <!-- Hood Air Vents & Racing Stripes -->
-            <path d="M36 68 L38 84 L50 84 L52 68 Z" fill="#0F172A" fill-opacity="0.55" />
-            <line x1="44" y1="64" x2="44" y2="86" stroke="#FFFFFF" stroke-width="1.2" stroke-opacity="0.5" />
-
-            <!-- Cabin / Windshield & Rear Glass -->
-            <path d="M29 88 C32 85 56 85 59 88 L56 122 C54 125 34 125 32 122 Z" fill="#0B0F19" stroke="#334155" stroke-width="1" />
-            <!-- Front Windshield Reflection -->
-            <path d="M30.5 89 C34 86.5 54 86.5 57.5 89 L55 99 C48 97.5 40 97.5 33 99 Z" fill="#1E293B" />
-            <!-- Roof Panel -->
-            <rect x="33.5" y="99" width="21" height="14" rx="3" fill="#0F172A" stroke="#475569" stroke-width="0.6" />
-            <!-- Rear Engine Louvers -->
-            <line x1="36" y1="116" x2="52" y2="116" stroke="#334155" stroke-width="1.3" />
-            <line x1="37" y1="119.5" x2="51" y2="119.5" stroke="#334155" stroke-width="1.3" />
-
-            <!-- Side Mirrors -->
-            <path d="M26 89 L21 91 L22 94 L26 93 Z" fill="#00F0FF" id="car-mirror-l" />
-            <path d="M62 89 L67 91 L66 94 L62 93 Z" fill="#00F0FF" id="car-mirror-r" />
-
-            <!-- Rear GT Wing / Spoiler -->
-            <rect x="25" y="131" width="38" height="4.5" rx="1.5" fill="#090D16" stroke="#475569" stroke-width="0.8" />
-
-            <!-- Front LED Headlight Strips -->
-            <path d="M27 72 L34 74" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" />
-            <path d="M61 72 L54 74" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" />
-          </g>
-
-          <!-- Rear Taillights (Always dimly on, bright glow when braking) -->
-          <g id="svg-taillights-idle">
-            <rect x="26" y="135.5" width="11" height="2.5" rx="1" fill="#991B1B" />
-            <rect x="51" y="135.5" width="11" height="2.5" rx="1" fill="#991B1B" />
-          </g>
-
-          <!-- Active Brake Light Glow -->
-          <g id="svg-brakelights" opacity="0" filter="url(#brakeGlow)">
-            <rect x="25" y="135" width="13" height="3.8" rx="1.5" fill="#EF4444" />
-            <rect x="50" y="135" width="13" height="3.8" rx="1.5" fill="#EF4444" />
-            <circle cx="31.5" cy="138" r="8" fill="#EF4444" fill-opacity="0.45" />
-            <circle cx="56.5" cy="138" r="8" fill="#EF4444" fill-opacity="0.45" />
-          </g>
-
-          <!-- Reverse White Lights -->
-          <g id="svg-reverselights" opacity="0">
-            <rect x="38.5" y="136" width="4" height="2.2" fill="#F8FAFC" />
-            <rect x="45.5" y="136" width="4" height="2.2" fill="#F8FAFC" />
-          </g>
-        </svg>
-      </div>
-    </div>
-  </div>
-
-  <!-- 4. TACTICAL HUD OVERLAY CONTAINER -->
-  <div class="fixed inset-0 z-[500] pointer-events-none flex flex-col justify-between p-2.5 sm:p-4 md:p-5">
-
-    <!-- ==================== TOP TELEMETRY & CITY TELEPORT BAR ==================== -->
-    <header class="w-full flex flex-col gap-2 pointer-events-none">
-      <div class="w-full flex flex-wrap items-center justify-between gap-2.5">
-
-        <!-- Brand + Search + Quick Cities Panel -->
-        <div class="hud-glass pointer-events-auto rounded-2xl p-2 sm:p-2.5 flex flex-wrap items-center gap-2 max-w-full lg:max-w-[740px] flex-1">
-          <!-- Brand Badge -->
-          <div class="flex items-center gap-2 px-2 py-1 rounded-xl bg-slate-900/90 border border-white/10 shrink-0">
-            <span class="w-2.5 h-2.5 rounded-full bg-[#00F0FF] shadow-[0_0_10px_#00F0FF] animate-pulse"></span>
-            <div class="leading-none">
-              <span class="font-display font-bold text-xs tracking-wider text-white block">OSM<span class="text-[#00F0FF]">DRIVE</span></span>
-              <span class="font-mono-tabular text-[9px] text-slate-400 tracking-widest uppercase">MOD.01</span>
-            </div>
-          </div>
-
-          <!-- Search Form (Nominatim Geocoding) -->
-          <form id="city-search-form" class="relative flex-1 min-w-[180px] sm:min-w-[230px]" autocomplete="off">
-            <input
-              id="city-search-input"
-              type="text"
-              placeholder="Rechercher une ville, rue, monument (ex: Casablanca, Lyon, Shibuya)..."
-              style="user-select: text; -webkit-user-select: text;"
-              class="w-full bg-slate-950/85 text-slate-100 placeholder-slate-400 text-xs sm:text-sm rounded-xl pl-8 pr-20 py-2 border border-white/10 focus:outline-none focus:border-[#00F0FF] focus:ring-1 focus:ring-[#00F0FF]/40 transition"
-            />
-            <!-- Search Icon -->
-            <svg class="w-4 h-4 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-              <circle cx="11" cy="11" r="8"></circle>
-              <path stroke-linecap="round" d="m21 21-4.3-4.3"></path>
-            </svg>
-            <!-- Submit Button -->
-            <button
-              type="submit"
-              id="city-search-btn"
-              class="absolute right-1.5 top-1/2 -translate-y-1/2 px-2.5 py-1 rounded-lg bg-[#00F0FF]/15 hover:bg-[#00F0FF]/30 text-[#00F0FF] border border-[#00F0FF]/40 text-[11px] font-semibold tracking-wide transition cursor-pointer"
-            >
-              GO
-            </button>
-
-            <!-- Autocomplete / Search Results Dropdown -->
-            <div id="search-results-dropdown" class="hidden absolute left-0 right-0 top-[calc(100%+6px)] hud-glass-elevated rounded-xl overflow-hidden z-50 max-h-60 overflow-y-auto divide-y divide-white/10"></div>
-          </form>
-
-          <!-- Preset City Teleport Chips -->
-          <div class="flex items-center gap-1.5 overflow-x-auto max-w-full py-0.5 no-scrollbar">
-            <button type="button" data-city="Casablanca" data-lat="33.5951" data-lng="-7.6187" data-heading="68" class="city-pill active px-2.5 py-1 rounded-lg bg-slate-900/70 border border-white/10 text-[11px] font-medium text-slate-200 shrink-0 cursor-pointer">
-              🇲🇦 Casablanca
-            </button>
-            <button type="button" data-city="Paris" data-lat="48.8738" data-lng="2.2950" data-heading="115" class="city-pill px-2.5 py-1 rounded-lg bg-slate-900/70 border border-white/10 text-[11px] font-medium text-slate-200 shrink-0 cursor-pointer">
-              🇫🇷 Paris
-            </button>
-            <button type="button" data-city="New York" data-lat="40.7580" data-lng="-73.9855" data-heading="29" class="city-pill px-2.5 py-1 rounded-lg bg-slate-900/70 border border-white/10 text-[11px] font-medium text-slate-200 shrink-0 cursor-pointer">
-              🇺🇸 New York
-            </button>
-            <button type="button" data-city="Tokyo" data-lat="35.6595" data-lng="139.7005" data-heading="320" class="city-pill px-2.5 py-1 rounded-lg bg-slate-900/70 border border-white/10 text-[11px] font-medium text-slate-200 shrink-0 cursor-pointer">
-              🇯🇵 Tokyo
-            </button>
-            <button type="button" data-city="Monaco" data-lat="43.7347" data-lng="7.4206" data-heading="42" class="city-pill px-2.5 py-1 rounded-lg bg-slate-900/70 border border-white/10 text-[11px] font-medium text-slate-200 shrink-0 cursor-pointer">
-              🇲🇨 Monaco
-            </button>
-          </div>
-        </div>
-
-        <!-- Right Telemetry Readout & Quick Toggles -->
-        <div class="hud-glass pointer-events-auto rounded-2xl p-2 sm:px-3.5 sm:py-2 flex items-center gap-3 ml-auto">
-          <!-- Active City & Coordinates -->
-          <div class="hidden sm:flex flex-col text-right">
-            <div class="flex items-center justify-end gap-1.5">
-              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-              <span id="hud-location-name" class="font-display font-bold text-xs text-white tracking-wide uppercase truncate max-w-[160px]">CASABLANCA, MA</span>
-            </div>
-            <div id="hud-coords" class="font-mono-tabular text-[11px] text-slate-400">
-              33.5951° N, 7.6187° W
-            </div>
-          </div>
-
-          <!-- Heading Compass & Odometer -->
-          <div class="flex items-center gap-2.5 pl-0 sm:pl-2.5 sm:border-l border-white/10">
-            <div class="text-center px-2 py-0.5 rounded-lg bg-slate-900/80 border border-white/10">
-              <span class="text-[9px] uppercase tracking-wider text-slate-400 block">CAP</span>
-              <span id="hud-heading" class="font-mono-tabular text-xs font-bold text-[#00F0FF]">068° ENE</span>
-            </div>
-            <div class="text-center px-2 py-0.5 rounded-lg bg-slate-900/80 border border-white/10">
-              <span class="text-[9px] uppercase tracking-wider text-slate-400 block">DISTANCE</span>
-              <span id="hud-odometer" class="font-mono-tabular text-xs font-bold text-slate-200">0.00 km</span>
-            </div>
-          </div>
-
-          <!-- Quick Utility Buttons: Map Theme, Car Color, Audio, Zoom -->
-          <div class="flex items-center gap-1 border-l border-white/10 pl-2">
-            <button id="btn-map-theme" type="button" title="Changer le style de carte (Nuit Tactique / OSM Classique / Satellite)" class="p-1.5 rounded-lg bg-slate-900/80 hover:bg-slate-800 border border-white/10 text-slate-200 hover:text-[#00F0FF] transition cursor-pointer">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"></polygon>
-                <line x1="8" y1="2" x2="8" y2="18"></line>
-                <line x1="16" y1="6" x2="16" y2="22"></line>
-              </svg>
-            </button>
-            <button id="btn-car-color" type="button" title="Changer la couleur de la voiture" class="p-1.5 rounded-lg bg-slate-900/80 hover:bg-slate-800 border border-white/10 text-slate-200 hover:text-[#00F0FF] transition cursor-pointer">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                <circle cx="13.5" cy="6.5" r=".5" fill="currentColor"></circle>
-                <circle cx="17.5" cy="10.5" r=".5" fill="currentColor"></circle>
-                <circle cx="8.5" cy="7.5" r=".5" fill="currentColor"></circle>
-                <circle cx="6.5" cy="12.5" r=".5" fill="currentColor"></circle>
-                <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"></path>
-              </svg>
-            </button>
-            <button id="btn-audio" type="button" title="Activer/Couper le son moteur synthétique" class="p-1.5 rounded-lg bg-slate-900/80 hover:bg-slate-800 border border-white/10 text-slate-400 hover:text-[#00F0FF] transition cursor-pointer">
-              <svg id="icon-audio-off" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
-                <line x1="23" y1="9" x2="17" y2="15"></line>
-                <line x1="17" y1="9" x2="23" y2="15"></line>
-              </svg>
-              <svg id="icon-audio-on" class="w-4 h-4 hidden text-[#00F0FF]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
-                <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
-                <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
-              </svg>
-            </button>
-            <button id="btn-zoom-in" type="button" title="Zoom +" class="hidden md:flex items-center justify-center w-7 h-7 rounded-lg bg-slate-900/80 hover:bg-slate-800 border border-white/10 text-slate-200 font-mono-tabular text-sm font-bold cursor-pointer">+</button>
-            <button id="btn-zoom-out" type="button" title="Zoom -" class="hidden md:flex items-center justify-center w-7 h-7 rounded-lg bg-slate-900/80 hover:bg-slate-800 border border-white/10 text-slate-200 font-mono-tabular text-sm font-bold cursor-pointer">−</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Sub-bar: Keyboard Legend Pill + Active GPS Waypoint Banner + Toast Notification -->
-      <div class="flex flex-wrap items-center justify-between gap-2">
-        <!-- Controls Hint Pill (Desktop) -->
-        <div class="hidden md:flex items-center gap-3 hud-glass pointer-events-auto px-3 py-1.5 rounded-xl text-[11px] text-slate-300">
-          <span class="flex items-center gap-1.5">
-            <kbd class="px-1.5 py-0.5 rounded bg-slate-800 border border-white/15 font-mono-tabular text-[10px] text-white">▲▼◄►</kbd>
-            <span class="text-slate-400">ou</span>
-            <kbd class="px-1.5 py-0.5 rounded bg-slate-800 border border-white/15 font-mono-tabular text-[10px] text-white">ZQSD / WASD</kbd>
-            <span>Conduire</span>
-          </span>
-          <span class="text-white/20">•</span>
-          <span class="flex items-center gap-1">
-            <kbd class="px-1.5 py-0.5 rounded bg-slate-800 border border-white/15 font-mono-tabular text-[10px] text-amber-300">ESPACE</kbd>
-            <span>Drift</span>
-          </span>
-          <span class="text-white/20">•</span>
-          <span class="flex items-center gap-1">
-            <kbd class="px-1.5 py-0.5 rounded bg-slate-800 border border-white/15 font-mono-tabular text-[10px] text-[#00F0FF]">SHIFT</kbd>
-            <span>Nitro</span>
-          </span>
-          <span class="text-white/20">•</span>
-          <span class="flex items-center gap-1">
-            <kbd class="px-1.5 py-0.5 rounded bg-slate-800 border border-white/15 font-mono-tabular text-[10px] text-slate-200">L</kbd>
-            <span>Phares</span>
-          </span>
-          <span class="text-white/20">•</span>
-          <span class="text-slate-400">Clic sur la carte : <strong class="text-[#00F0FF] font-normal">Point GPS cible</strong></span>
-        </div>
-
-        <!-- GPS Target Distance Chip (Shown when user clicks on map) -->
-        <div id="waypoint-banner" class="hidden hud-glass pointer-events-auto px-3 py-1.5 rounded-xl flex items-center gap-2.5 border border-[#00F0FF]/40">
-          <span class="w-2 h-2 rounded-full bg-[#00F0FF] animate-ping"></span>
-          <span class="text-xs font-medium text-slate-200">Objectif GPS : <strong id="waypoint-distance" class="font-mono-tabular text-[#00F0FF]">450 m</strong></span>
-          <button id="btn-clear-waypoint" type="button" class="text-[11px] text-slate-400 hover:text-white ml-1 cursor-pointer">✕</button>
-        </div>
-
-        <!-- Status Toast Banner -->
-        <div id="telemetry-toast" class="transition-all duration-300 opacity-0 -translate-y-2 pointer-events-none hud-glass-elevated px-3.5 py-1.5 rounded-xl border-l-4 border-l-[#00F0FF] text-xs font-medium text-white ml-auto">
-          TÉLÉPORTATION : CASABLANCA
-        </div>
-      </div>
-    </header>
-
-    <!-- ==================== BOTTOM CONTROLS & SPEEDOMETER CLUSTER ==================== -->
-    <footer class="w-full flex items-end justify-between gap-2 sm:gap-4 pointer-events-none pb-0.5">
-
-      <!-- BOTTOM-LEFT: MOBILE / TOUCH STEERING PADS (◄ / ►) -->
-      <div class="pointer-events-auto flex items-center gap-2 sm:gap-3">
-        <button
-          id="touch-left"
-          type="button"
-          aria-label="Tourner à gauche"
-          class="control-btn control-btn-steer hud-glass w-16 h-16 sm:w-[72px] sm:h-[72px] rounded-2xl flex flex-col items-center justify-center text-slate-100 active:text-[#00F0FF] cursor-pointer"
-        >
-          <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
-          </svg>
-          <span class="font-mono-tabular text-[9px] uppercase tracking-widest text-slate-400 mt-0.5">GAUCHE</span>
-        </button>
-
-        <button
-          id="touch-right"
-          type="button"
-          aria-label="Tourner à droite"
-          class="control-btn control-btn-steer hud-glass w-16 h-16 sm:w-[72px] sm:h-[72px] rounded-2xl flex flex-col items-center justify-center text-slate-100 active:text-[#00F0FF] cursor-pointer"
-        >
-          <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
-          </svg>
-          <span class="font-mono-tabular text-[9px] uppercase tracking-widest text-slate-400 mt-0.5">DROITE</span>
-        </button>
-      </div>
-
-      <!-- BOTTOM-CENTER: DIGITAL & RADIAL TELEMETRY SPEEDOMETER CLUSTER -->
-      <div class="hud-glass pointer-events-auto rounded-3xl px-3.5 py-2.5 sm:px-6 sm:py-3 flex items-center gap-3 sm:gap-5 relative overflow-hidden">
-        <!-- Subtle top accent glow bar -->
-        <div id="speed-glow-bar" class="absolute top-0 left-6 right-6 h-[2px] bg-gradient-to-r from-transparent via-[#00F0FF] to-transparent opacity-60"></div>
-
-        <!-- Radial SVG Gauge + Digital Readout -->
-        <div class="relative w-28 h-24 sm:w-36 sm:h-28 flex items-center justify-center">
-          <svg class="w-full h-full -rotate-[210deg]" viewBox="0 0 120 120">
-            <!-- Background Track Arc (240 deg) -->
-            <circle
-              cx="60"
-              cy="60"
-              r="48"
-              fill="none"
-              stroke="rgba(255,255,255,0.09)"
-              stroke-width="8"
-              stroke-dasharray="201 302"
-              stroke-linecap="round"
-            />
-            <!-- Dynamic Speed Arc -->
-            <circle
-              id="speed-arc"
-              cx="60"
-              cy="60"
-              r="48"
-              fill="none"
-              stroke="#00F0FF"
-              stroke-width="8"
-              stroke-dasharray="0 302"
-              stroke-linecap="round"
-              style="transition: stroke 0.15s ease;"
-            />
-          </svg>
-
-          <!-- Center Digital Speed Readout -->
-          <div class="absolute inset-0 flex flex-col items-center justify-center pt-2">
-            <span
-              id="hud-speed-value"
-              class="font-mono-tabular font-extrabold text-3xl sm:text-5xl leading-none tracking-tight text-white"
-            >0</span>
-            <span class="font-mono-tabular text-[10px] sm:text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400 mt-1">
-              KM/H
-            </span>
-          </div>
-        </div>
-
-        <!-- Gear Indicator, RPM Bar & Vehicle Status Pills -->
-        <div class="hidden xs:flex sm:flex flex-col justify-between gap-2 border-l border-white/10 pl-3 sm:pl-4">
-          <div class="flex items-center gap-2.5">
-            <!-- Gear Box -->
-            <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-slate-900/90 border border-white/15 flex flex-col items-center justify-center">
-              <span class="text-[8px] font-mono-tabular uppercase text-slate-400 leading-none">RAPPORT</span>
-              <span id="hud-gear" class="font-mono-tabular font-extrabold text-base sm:text-lg text-[#00F0FF] leading-tight">N</span>
-            </div>
-
-            <!-- Physics Mode / Max Speed Toggle -->
-            <button id="btn-engine-mode" type="button" title="Basculer entre le mode GT (200 km/h) et Hypercar (320 km/h)" class="px-2.5 py-1.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-white/10 text-left transition cursor-pointer">
-              <span class="text-[8px] font-mono-tabular uppercase tracking-wider text-slate-400 block">MOTEUR</span>
-              <span id="hud-engine-mode" class="font-display font-bold text-xs text-emerald-400">SPORT GT</span>
-            </button>
-          </div>
-
-          <!-- Simulated RPM Segmented Bar -->
-          <div class="w-28 sm:w-32">
-            <div class="flex justify-between text-[9px] font-mono-tabular text-slate-400 mb-0.5">
-              <span>RPM</span>
-              <span id="hud-rpm-text">850</span>
-            </div>
-            <div class="w-full h-1.5 bg-slate-900 rounded-full overflow-hidden border border-white/10">
-              <div id="hud-rpm-bar" class="h-full bg-gradient-to-r from-[#00F0FF] via-emerald-400 to-rose-500 w-[8%] transition-all duration-75"></div>
-            </div>
-          </div>
-
-          <!-- Micro Status Badges (Drift / Lights / Boost) -->
-          <div class="flex items-center gap-1.5">
-            <button id="btn-toggle-lights" type="button" class="px-2 py-0.5 rounded text-[9px] font-mono-tabular font-semibold border border-[#00F0FF]/40 bg-[#00F0FF]/15 text-[#00F0FF] cursor-pointer">
-              PHARES
-            </button>
-            <span id="badge-drift" class="px-2 py-0.5 rounded text-[9px] font-mono-tabular font-semibold border border-white/10 bg-slate-900/60 text-slate-500 transition">
-              DRIFT
-            </span>
-            <span id="badge-boost" class="px-2 py-0.5 rounded text-[9px] font-mono-tabular font-semibold border border-white/10 bg-slate-900/60 text-slate-500 transition">
-              NITRO
-            </span>
-          </div>
-        </div>
-      </div>
-
-      <!-- BOTTOM-RIGHT: MOBILE / TOUCH PEDALS (DRIFT / FREIN / GAZ) -->
-      <div class="pointer-events-auto flex items-end gap-2 sm:gap-2.5">
-        <!-- Handbrake / Drift Button -->
-        <button
-          id="touch-drift"
-          type="button"
-          aria-label="Frein à main / Drift"
-          class="control-btn control-btn-drift hud-glass w-12 h-14 sm:w-14 sm:h-16 rounded-2xl flex flex-col items-center justify-center text-amber-300 border-amber-500/30 cursor-pointer"
-        >
-          <span class="font-mono-tabular font-bold text-xs">((!))</span>
-          <span class="font-mono-tabular text-[8px] uppercase tracking-wider text-amber-200/80 mt-1">DRIFT</span>
-        </button>
-
-        <!-- Brake / Reverse Pedal -->
-        <button
-          id="touch-brake"
-          type="button"
-          aria-label="Freiner ou Reculer"
-          class="control-btn control-btn-brake hud-glass w-16 h-16 sm:w-[70px] sm:h-[70px] rounded-2xl flex flex-col items-center justify-center text-rose-400 border-rose-500/30 cursor-pointer"
-        >
-          <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.4" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-          </svg>
-          <span class="font-mono-tabular text-[9px] font-semibold uppercase tracking-wider text-rose-300 mt-0.5">FREIN/R</span>
-        </button>
-
-        <!-- Accelerator / Gas Pedal (Taller) -->
-        <button
-          id="touch-gas"
-          type="button"
-          aria-label="Accélérer"
-          class="control-btn control-btn-gas hud-glass w-16 h-24 sm:w-[74px] sm:h-[96px] rounded-2xl flex flex-col items-center justify-center text-emerald-400 border-emerald-500/35 cursor-pointer"
-        >
-          <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="2.6" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18" />
-          </svg>
-          <span class="font-mono-tabular text-[10px] font-bold uppercase tracking-widest text-emerald-300 mt-1">GAZ</span>
-        </button>
-      </div>
-
-    </footer>
-  </div>
-
-  <!-- Leaflet 1.9.4 JS -->
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-
-  <!-- GAME ENGINE & TELEMETRY SCRIPT -->
-  <script>
-    (function () {
-      'use strict';
-
-      // =========================================================================
-      // 1. INITIAL CONFIGURATION & PRESET CITIES
-      // =========================================================================
-      const PRESET_CITIES = {
-        Casablanca: { name: 'CASABLANCA, MA', lat: 33.5951, lng: -7.6187, heading: 68 },
-        Paris:      { name: 'PARIS, FR',      lat: 48.8738, lng: 2.2950,  heading: 115 },
-        'New York': { name: 'NEW YORK, US',   lat: 40.7580, lng: -73.9855, heading: 29 },
-        Tokyo:      { name: 'TOKYO, JP',      lat: 35.6595, lng: 139.7005, heading: 320 },
-        Monaco:     { name: 'MONACO, MC',     lat: 43.7347, lng: 7.4206,  heading: 42 }
-      };
-
-      const CAR_PAINTS = [
-        { name: 'Cyber Cyan',   hex: '#00F0FF' },
-        { name: 'Crimson GT',   hex: '#F43F5E' },
-        { name: 'Solar Gold',   hex: '#F59E0B' },
-        { name: 'Emerald RS',   hex: '#10B981' },
-        { name: 'Titanium WHT', hex: '#F8FAFC' },
-        { name: 'Ultraviolet',  hex: '#A855F7' }
-      ];
-
-      const MAP_THEMES = [
-        {
-          id: 'tactical',
-          label: 'Mode Nuit Tactique (OSM)',
-          bodyClass: 'map-theme-tactical',
-          url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-          attribution: '&copy; OpenStreetMap contributors'
-        },
-        {
-          id: 'classic',
-          label: 'Mode Carte Classique (OSM)',
-          bodyClass: 'map-theme-classic',
-          url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-          attribution: '&copy; OpenStreetMap contributors'
-        },
-        {
-          id: 'satellite',
-          label: 'Mode Imagerie Satellite (Esri)',
-          bodyClass: 'map-theme-night',
-          url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-          attribution: '&copy; Esri & OpenStreetMap'
-        }
-      ];
-
-      // =========================================================================
-      // 2. VEHICLE PHYSICS STATE & PARAMETERS
-      // =========================================================================
-      const car = {
-        lat: PRESET_CITIES.Casablanca.lat,
-        lng: PRESET_CITIES.Casablanca.lng,
-        heading: PRESET_CITIES.Casablanca.heading, // Direction nose is pointing (degrees, 0 = North, 90 = East)
-        velocityAngle: PRESET_CITIES.Casablanca.heading, // Actual travel vector angle (for drift slip)
-        speedMs: 0,           // Forward speed in meters/second
-        speedKmh: 0,          // Displayed speed in km/h
-        steerAngle: 0,        // Current front wheel angle (-32 to +32 deg)
-        odometerKm: 0,        // Total distance traveled in km
-        headlightsOn: true,
-        paintIndex: 0,
-        engineMode: 'sport',  // 'sport' (max 210 km/h) or 'hyper' (max 320 km/h)
-        isDrifting: false,
-        driftIntensity: 0
-      };
-
-      const PHYSICS = {
-        sport: {
-          maxSpeedMs: 58.33,     // 210 km/h
-          reverseMaxMs: -15.5,   // -56 km/h
-          accelRate: 17.5,       // m/s²
-          boostAccelRate: 28.0,  // m/s² with Shift
-          brakeRate: 36.0,       // m/s²
-          dragCoeff: 0.0042,     // Aerodynamic drag
-          rollingResist: 3.2,    // Natural deceleration
-          turnRateMax: 108.0     // Degrees per second steering
-        },
-        hyper: {
-          maxSpeedMs: 88.88,     // 320 km/h
-          reverseMaxMs: -19.5,   // -70 km/h
-          accelRate: 26.5,
-          boostAccelRate: 40.0,
-          brakeRate: 46.0,
-          dragCoeff: 0.0028,
-          rollingResist: 3.6,
-          turnRateMax: 118.0
-        }
-      };
-
-      // Active Input State (Keyboard + Multi-Touch Unified)
-      const inputs = {
-        up: false,
-        down: false,
-        left: false,
-        right: false,
-        handbrake: false,
-        boost: false
-      };
-
-      // Separate tracking so keyboard and touch never cancel each other prematurely
-      const keyState = { up: false, down: false, left: false, right: false, handbrake: false, boost: false };
-      const touchState = { up: false, down: false, left: false, right: false, handbrake: false };
-
-      function syncInputs() {
-        inputs.up = keyState.up || touchState.up;
-        inputs.down = keyState.down || touchState.down;
-        inputs.left = keyState.left || touchState.left;
-        inputs.right = keyState.right || touchState.right;
-        inputs.handbrake = keyState.handbrake || touchState.handbrake;
-        inputs.boost = keyState.boost;
+/* ================= SECTION 11 — HANGAR + VOL =================
+Règle d'accès : la base la plus proche doit être à moins de 25 km, sinon le
+bouton « Base (E) » dit « Aucune base militaire à proximité » — on ne téléporte
+pas magiquement dans un hangar. Une fois au hangar, chaque avion affiche sa
+fiche réelle et son cockpit réel. Vol : décollage, montée, croisière, descente,
+atterrissage doux ou crash facturé. Boeing : passagers = capacité réelle,
+salaire = passagers × distance (km) × 0,05 $, XP en plus, objectif Capitaine.
+Un avion laissé au sol ne dépasse jamais sa vitesse max (plafond appliqué). */
+var selectedBase=BASES[0], selectedPlane=PLANES[0];
+function nearestBase(){
+  var best=null, bestD=1e12;
+  BASES.forEach(function(b){ var d=distanceM(state.lat,state.lng,b.lat,b.lng); if(d<bestD){ bestD=d; best=b; } });
+  return {base:best, dist:bestD};
+}
+function openNearestBase(){
+  var nb=nearestBase();
+  if(nb.dist>25000){ showMsg('Aucune base militaire à proximité (la plus proche est à '+Math.round(nb.dist/1000)+' km). Conduis vers elle ou clique sa pastille bleue.'); return; }
+  selectedBase=nb.base; openPanel('hangarPanel'); renderHangar();
+}
+function renderHangar(){
+  var bl=document.getElementById('baseList'); bl.innerHTML='';
+  BASES.forEach(function(b){
+    var d=document.createElement('div'); d.className='card'+(selectedBase.name===b.name?' sel':'');
+    d.innerHTML='<b>🛩️ '+b.name+'</b><p>Base militaire réelle, sur la carte.</p>';
+    d.onclick=function(){ selectedBase=b; renderHangar(); };
+    bl.appendChild(d);
+  });
+  var pl=document.getElementById('planeList'); pl.innerHTML='';
+  PLANES.forEach(function(p){
+    var d=document.createElement('div'); d.className='card'+(selectedPlane.id===p.id?' sel':'');
+    d.innerHTML='<b>'+p.name+'</b><p>'+p.engines+'</p><p>'+p.mach+' · '+p.cruise+(p.pax?' · '+p.pax+' passagers':'')+'</p>';
+    d.onclick=function(){ selectedPlane=p; renderHangar(); };
+    pl.appendChild(d);
+  });
+  var p=selectedPlane;
+  document.getElementById('planeFiche').innerHTML=
+    '<h3>Fiche réelle — '+p.name+'</h3><div class="spec">'+
+    '<div><b>Moteurs</b>'+p.engines+'</div><div><b>Puissance</b>'+p.power+'</div>'+
+    '<div><b>Vitesse max</b>'+p.mach+'</div><div><b>Croisière</b>'+p.cruise+'</div>'+
+    '<div><b>Passagers</b>'+(p.pax||'0 (chasseur)')+'</div><div><b>Base</b>'+selectedBase.name+'</div></div>'+
+    '<p><b>Cockpit réel :</b> '+p.cockpit+'</p><p>'+p.summary+'</p>'+
+    '<button class="bigbtn" onclick="takeOff()">✈️ Décoller avec '+p.name+'</button> '+
+    '<button class="bigbtn" onclick="passengerFlight()">🧑‍🤝‍🧑 Vol passagers (Boeing)</button>';
+}
+function takeOff(){
+  if(state.flying){ showMsg('Tu es déjà en vol.'); return; }
+  closePanels();
+  state.flying={plane:selectedPlane, alt:0, speed:0, phase:'décollage', from:selectedBase, dest:null};
+  state.lat=selectedBase.lat; state.lng=selectedBase.lng;
+  movePlayerMarker(); showMsg('✈️ Décollage : '+selectedPlane.name+' — cabre doucement, puis croisière. Atterrissage doux ou crash facturé.');
+}
+function passengerFlight(){
+  var p=selectedPlane;
+  if(!p.pax){ showMsg('Ce n\'est pas un Boeing : pas de vol passagers. Choisis un 747, 777, 787 ou 737.'); return; }
+  /* Destination = une autre base, au hasard parmi les 9 autres. */
+  var others=BASES.filter(function(b){ return b.name!==selectedBase.name; });
+  var dest=others[Math.floor(Math.random()*others.length)];
+  var distKm=distanceM(selectedBase.lat, selectedBase.lng, dest.lat, dest.lng)/1000;
+  var pay=Math.round(p.pax*distKm*0.05);
+  closePanels();
+  state.flying={plane:p, alt:0, speed:0, phase:'décollage', from:selectedBase, dest:dest, pay:pay, distKm:Math.round(distKm)};
+  state.lat=selectedBase.lat; state.lng=selectedBase.lng;
+  movePlayerMarker();
+  showMsg('🧑‍🤝‍🧑 Vol passagers : '+p.pax+' passagers vers '+dest.name+' ('+Math.round(distKm)+' km) — salaire '+pay+' $ à l\'arrivée si atterrissage doux.');
+}
+function updateFlight(dt){
+  var f=state.flying; if(!f) return;
+  var vmax = f.plane.id==='f22' ? 2400 : f.plane.id==='yf23' ? 2300 : 950;
+  if(keys.up) f.speed+=300*dt; else f.speed*= (1-0.2*dt);
+  if(f.speed>vmax) f.speed=vmax; /* plafond au sol comme en vol : jamais au-delà du max */
+  if(f.phase==='décollage' && f.speed>250){ f.phase='montée'; showMsg('Montée : altitude en hausse, cap vers '+(f.dest?f.dest.name:'le ciel')+'.'); }
+  if(f.phase==='montée'){ f.alt+=800*dt; if(f.alt>9000) f.phase='croisière'; }
+  /* Vol libre (sans destination) : la touche Bas déclenche la descente,
+     sinon un vol libre ne pourrait jamais atterrir. */
+  if(f.phase==='croisière' && !f.dest && keys.down) f.phase='descente';
+  if(f.phase==='croisière' && f.dest){
+    /* On avance vers la destination, en ligne droite, à la vitesse de croisière. */
+    var d=distanceM(state.lat,state.lng,f.dest.lat,f.dest.lng);
+    if(d<5000){ f.phase='descente'; showMsg('Descente : ralentis, prépare l\'atterrissage doux.'); }
+    else{
+      var rad=Math.atan2(f.dest.lng-state.lng, f.dest.lat-state.lat);
+      var step=f.speed*dt/111320;
+      state.lat+=step*Math.cos(rad); state.lng+=step*Math.sin(rad)/Math.max(0.3, Math.cos(state.lat*Math.PI/180));
+    }
+  }
+  if(f.phase==='descente'){ f.alt=Math.max(0, f.alt-600*dt); f.speed=Math.max(200, f.speed-100*dt);
+    if(f.alt<=0){
+      if(f.speed>350){ /* crash : atterrissage trop rapide, facturé */
+        state.money=Math.max(0, state.money-500); showMsg('💥 Crash à l\'atterrissage : -500 $. Atterris plus lentement la prochaine fois.'); }
+      else{
+        state.flights++; if(f.dest && f.pay){ addMoney(f.pay, 80); showMsg('✅ Vol passagers réussi : +'+f.pay+' $ vers '+f.dest.name+'.'); }
+        else showMsg('✅ Atterrissage doux. Bien joué, pilote.');
+        if(state.flights>=1) unlockTrophy('captain', 'Capitaine d\'aube');
       }
-
-      // =========================================================================
-      // 3. INITIALIZE LEAFLET MAP
-      // =========================================================================
-      let currentZoom = 18;
-      let currentThemeIndex = 0;
-
-      const map = L.map('map', {
-        center: [car.lat, car.lng],
-        zoom: currentZoom,
-        zoomControl: false,
-        keyboard: false,        // Disable Leaflet arrow-key panning so arrows drive the car
-        dragging: false,        // Camera stays locked to car
-        scrollWheelZoom: true,  // Allow zooming in/out with mouse wheel
-        doubleClickZoom: false,
-        boxZoom: false,
-        inertia: false,
-        zoomAnimation: true
-      });
-
-      let tileLayer = L.tileLayer(MAP_THEMES[0].url, {
-        maxZoom: 19,
-        minZoom: 13,
-        attribution: MAP_THEMES[0].attribution
-      }).addTo(map);
-
-      map.on('zoomend', () => {
-        currentZoom = map.getZoom();
-      });
-
-      // Waypoint / Target Pin when clicking on the map
-      let waypoint = null;
-      let waypointMarker = null;
-
-      map.on('click', (e) => {
-        setWaypoint(e.latlng.lat, e.latlng.lng);
-      });
-
-      function setWaypoint(lat, lng) {
-        waypoint = { lat, lng };
-        if (waypointMarker) {
-          waypointMarker.setLatLng([lat, lng]);
-        } else {
-          const icon = L.divIcon({
-            className: 'custom-waypoint-icon',
-            html: `
-              <div style="position:relative;width:24px;height:24px;transform:translate(-12px,-12px);">
-                <div class="gps-target-ring" style="position:absolute;inset:0;border-radius:9999px;border:2px solid #00F0FF;background:rgba(0,240,255,0.25);"></div>
-                <div style="position:absolute;left:7px;top:7px;width:10px;height:10px;border-radius:9999px;background:#00F0FF;box-shadow:0 0 12px #00F0FF;border:2px solid #0B0F17;"></div>
-              </div>
-            `,
-            iconSize: [0, 0]
-          });
-          waypointMarker = L.marker([lat, lng], { icon, interactive: false }).addTo(map);
-        }
-        document.getElementById('waypoint-banner').classList.remove('hidden');
-        showToast('OBJECTIF GPS VERROUILLÉ');
-      }
-
-      function clearWaypoint() {
-        waypoint = null;
-        if (waypointMarker) {
-          map.removeLayer(waypointMarker);
-          waypointMarker = null;
-        }
-        document.getElementById('waypoint-banner').classList.add('hidden');
-      }
-
-      document.getElementById('btn-clear-waypoint').addEventListener('click', clearWaypoint);
-
-      // =========================================================================
-      // 4. FX CANVAS (TIRE SKID MARKS, DRIFT SMOKE & GPS TARGET LINE)
-      // =========================================================================
-      const fxCanvas = document.getElementById('fx-canvas');
-      const fxCtx = fxCanvas.getContext('2d');
-      const skidMarks = [];    // Anchored in world coordinates {lat1, lng1, lat2, lng2, alpha}
-      const smokeParticles = []; // Anchored in world coordinates {lat, lng, vx, vy, radius, alpha}
-      let prevRearLeft = null;
-      let prevRearRight = null;
-
-      function resizeFxCanvas() {
-        const dpr = Math.min(window.devicePixelRatio || 1, 2);
-        fxCanvas.width = window.innerWidth * dpr;
-        fxCanvas.height = window.innerHeight * dpr;
-        fxCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      }
-      window.addEventListener('resize', resizeFxCanvas);
-      resizeFxCanvas();
-
-      // Convert local car offset (meters right, meters forward) into world (lat, lng)
-      function getCarOffsetLatLng(rightMeters, forwardMeters) {
-        const rad = (car.heading * Math.PI) / 180;
-        const sinH = Math.sin(rad);
-        const cosH = Math.cos(rad);
-
-        const eastMeters = forwardMeters * sinH + rightMeters * cosH;
-        const northMeters = forwardMeters * cosH - rightMeters * sinH;
-
-        const metersPerDegLat = 111320;
-        const metersPerDegLng = 111320 * Math.cos((car.lat * Math.PI) / 180);
-
-        return {
-          lat: car.lat + northMeters / metersPerDegLat,
-          lng: car.lng + eastMeters / metersPerDegLng
-        };
-      }
-
-      // =========================================================================
-      // 5. SYNTHESIZED WEB AUDIO ENGINE & TIRE SCREECH (ZERO EXTERNAL FILES)
-      // =========================================================================
-      let audioCtx = null;
-      let engineOsc = null;
-      let engineGain = null;
-      let screechNode = null;
-      let screechGain = null;
-      let audioEnabled = false;
-
-      function initAudio() {
-        if (audioCtx) return;
-        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-        if (!AudioContextClass) return;
-
-        audioCtx = new AudioContextClass();
-
-        // Engine Sawtooth + Sub Oscillator
-        engineOsc = audioCtx.createOscillator();
-        engineOsc.type = 'sawtooth';
-        engineOsc.frequency.value = 55;
-
-        const filter = audioCtx.createBiquadFilter();
-        filter.type = 'lowpass';
-        filter.frequency.value = 260;
-
-        engineGain = audioCtx.createGain();
-        engineGain.gain.value = 0.0;
-
-        engineOsc.connect(filter);
-        filter.connect(engineGain);
-        engineGain.connect(audioCtx.destination);
-        engineOsc.start();
-
-        // White Noise Bandpass for Tire Drift Screech
-        const bufferSize = audioCtx.sampleRate * 1.5;
-        const noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
-        const output = noiseBuffer.getChannelData(0);
-        for (let i = 0; i < bufferSize; i++) {
-          output[i] = Math.random() * 2 - 1;
-        }
-
-        screechNode = audioCtx.createBufferSource();
-        screechNode.buffer = noiseBuffer;
-        screechNode.loop = true;
-
-        const screechFilter = audioCtx.createBiquadFilter();
-        screechFilter.type = 'bandpass';
-        screechFilter.frequency.value = 1150;
-        screechFilter.Q.value = 4.5;
-
-        screechGain = audioCtx.createGain();
-        screechGain.gain.value = 0.0;
-
-        screechNode.connect(screechFilter);
-        screechFilter.connect(screechGain);
-        screechGain.connect(audioCtx.destination);
-        screechNode.start();
-      }
-
-      function updateAudio() {
-        if (!audioEnabled || !audioCtx) return;
-        const speedRatio = Math.min(Math.abs(car.speedKmh) / 240, 1);
-        const baseFreq = 48 + speedRatio * 155 + (inputs.up ? 14 : 0) + (inputs.boost ? 30 : 0);
-        engineOsc.frequency.setTargetAtTime(baseFreq, audioCtx.currentTime, 0.05);
-        engineGain.gain.setTargetAtTime(0.06 + speedRatio * 0.06, audioCtx.currentTime, 0.08);
-
-        const shouldScreech = car.isDrifting && Math.abs(car.speedKmh) > 25;
-        screechGain.gain.setTargetAtTime(shouldScreech ? Math.min(car.driftIntensity * 0.07, 0.09) : 0, audioCtx.currentTime, 0.06);
-      }
-
-      document.getElementById('btn-audio').addEventListener('click', () => {
-        initAudio();
-        if (!audioCtx) return;
-        if (audioCtx.state === 'suspended') audioCtx.resume();
-        audioEnabled = !audioEnabled;
-        if (!audioEnabled && engineGain && screechGain) {
-          engineGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.05);
-          screechGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.05);
-        }
-        document.getElementById('icon-audio-off').classList.toggle('hidden', audioEnabled);
-        document.getElementById('icon-audio-on').classList.toggle('hidden', !audioEnabled);
-        showToast(audioEnabled ? 'AUDIO MOTEUR : ACTIVÉ' : 'AUDIO MOTEUR : COUPÉ');
-      });
-
-      // =========================================================================
-      // 6. KEYBOARD & MULTI-TOUCH CONTROLS
-      // =========================================================================
-      const KEY_MAP = {
-        ArrowUp: 'up',
-        KeyW: 'up',
-        KeyZ: 'up',
-        ArrowDown: 'down',
-        KeyS: 'down',
-        ArrowLeft: 'left',
-        KeyA: 'left',
-        KeyQ: 'left',
-        ArrowRight: 'right',
-        KeyD: 'right',
-        Space: 'handbrake',
-        ShiftLeft: 'boost',
-        ShiftRight: 'boost'
-      };
-
-      window.addEventListener('keydown', (e) => {
-        // Ignore shortcuts when typing in the city search box
-        if (document.activeElement && document.activeElement.id === 'city-search-input') {
-          if (e.key === 'Escape') {
-            document.activeElement.blur();
-            document.getElementById('search-results-dropdown').classList.add('hidden');
-          }
-          return;
-        }
-
-        if (e.code === 'KeyL') {
-          toggleHeadlights();
-          return;
-        }
-
-        const action = KEY_MAP[e.code];
-        if (action) {
-          e.preventDefault();
-          keyState[action] = true;
-          syncInputs();
-          updateTouchButtonVisuals();
-        }
-      });
-
-      window.addEventListener('keyup', (e) => {
-        const action = KEY_MAP[e.code];
-        if (action) {
-          keyState[action] = false;
-          syncInputs();
-          updateTouchButtonVisuals();
-        }
-      });
-
-      window.addEventListener('blur', () => {
-        Object.keys(keyState).forEach((k) => (keyState[k] = false));
-        Object.keys(touchState).forEach((k) => (touchState[k] = false));
-        syncInputs();
-        updateTouchButtonVisuals();
-      });
-
-      // Bind Touch / Pointer Buttons
-      function bindControlBtn(elementId, stateKey) {
-        const btn = document.getElementById(elementId);
-        if (!btn) return;
-
-        const activate = (e) => {
-          e.preventDefault();
-          touchState[stateKey] = true;
-          syncInputs();
-          updateTouchButtonVisuals();
-        };
-
-        const deactivate = (e) => {
-          e.preventDefault();
-          touchState[stateKey] = false;
-          syncInputs();
-          updateTouchButtonVisuals();
-        };
-
-        btn.addEventListener('pointerdown', activate);
-        btn.addEventListener('pointerup', deactivate);
-        btn.addEventListener('pointerleave', deactivate);
-        btn.addEventListener('pointercancel', deactivate);
-        btn.addEventListener('contextmenu', (e) => e.preventDefault());
-      }
-
-      bindControlBtn('touch-left', 'left');
-      bindControlBtn('touch-right', 'right');
-      bindControlBtn('touch-gas', 'up');
-      bindControlBtn('touch-brake', 'down');
-      bindControlBtn('touch-drift', 'handbrake');
-
-      function updateTouchButtonVisuals() {
-        document.getElementById('touch-left').classList.toggle('is-pressed', inputs.left);
-        document.getElementById('touch-right').classList.toggle('is-pressed', inputs.right);
-        document.getElementById('touch-gas').classList.toggle('is-pressed', inputs.up);
-        document.getElementById('touch-brake').classList.toggle('is-pressed', inputs.down);
-        document.getElementById('touch-drift').classList.toggle('is-pressed', inputs.handbrake);
-      }
-
-      // =========================================================================
-      // 7. CITY SEARCH (NOMINATIM API) & TELEPORTATION SYSTEM
-      // =========================================================================
-      const searchForm = document.getElementById('city-search-form');
-      const searchInput = document.getElementById('city-search-input');
-      const searchBtn = document.getElementById('city-search-btn');
-      const searchDropdown = document.getElementById('search-results-dropdown');
-
-      function teleportTo(lat, lng, labelName, customHeading = null) {
-        car.lat = parseFloat(lat);
-        car.lng = parseFloat(lng);
-        if (customHeading !== null && !isNaN(customHeading)) {
-          car.heading = parseFloat(customHeading);
-        }
-        car.velocityAngle = car.heading;
-        car.speedMs = 0;
-        car.speedKmh = 0;
-        car.steerAngle = 0;
-
-        // Clear skid marks from previous location
-        skidMarks.length = 0;
-        smokeParticles.length = 0;
-        prevRearLeft = null;
-        prevRearRight = null;
-
-        // Center Leaflet map immediately
-        map.setView([car.lat, car.lng], Math.max(map.getZoom(), 17), { animate: false });
-
-        // Update HUD Location Name
-        const cleanLabel = (labelName || 'DESTINATION').split(',')[0].trim().toUpperCase();
-        document.getElementById('hud-location-name').textContent = cleanLabel;
-        showToast(`TÉLÉPORTATION : ${cleanLabel}`);
-
-        // Highlight active city pill if matching
-        document.querySelectorAll('.city-pill').forEach((pill) => {
-          const isMatch = pill.dataset.city.toLowerCase() === cleanLabel.toLowerCase();
-          pill.classList.toggle('active', isMatch);
-        });
-      }
-
-      // Bind Preset City Pills
-      document.querySelectorAll('.city-pill').forEach((pill) => {
-        pill.addEventListener('click', () => {
-          const { city, lat, lng, heading } = pill.dataset;
-          teleportTo(parseFloat(lat), parseFloat(lng), city, parseFloat(heading));
-        });
-      });
-
-      // Nominatim Geocoding Search
-      async function searchCityNominatim(query) {
-        const trimmed = query.trim();
-        if (!trimmed) return;
-
-        // Check if query matches one of our instant presets first
-        for (const [key, preset] of Object.entries(PRESET_CITIES)) {
-          if (key.toLowerCase() === trimmed.toLowerCase()) {
-            teleportTo(preset.lat, preset.lng, preset.name, preset.heading);
-            searchDropdown.classList.add('hidden');
-            searchInput.blur();
-            return;
-          }
-        }
-
-        const originalBtnText = searchBtn.textContent;
-        searchBtn.textContent = '...';
-        searchBtn.disabled = true;
-
-        try {
-          const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=5&q=${encodeURIComponent(trimmed)}`;
-          const res = await fetch(url, {
-            headers: { 'Accept-Language': 'fr,en' }
-          });
-
-          if (!res.ok) throw new Error('Erreur réseau Nominatim');
-          const results = await res.json();
-
-          if (!results || results.length === 0) {
-            showToast(`AUCUN RÉSULTAT POUR "${trimmed.toUpperCase()}"`);
-            searchDropdown.classList.add('hidden');
-          } else if (results.length === 1) {
-            const first = results[0];
-            teleportTo(parseFloat(first.lat), parseFloat(first.lon), first.display_name);
-            searchDropdown.classList.add('hidden');
-            searchInput.blur();
-          } else {
-            // Teleport immediately to top result AND show other matches in dropdown if user wants precision
-            const top = results[0];
-            teleportTo(parseFloat(top.lat), parseFloat(top.lon), top.display_name);
-            renderSearchResults(results);
-            searchInput.blur();
-          }
-        } catch (err) {
-          console.error(err);
-          showToast('ERREUR DE RECHERCHE GÉOGRAPHIQUE');
-        } finally {
-          searchBtn.textContent = originalBtnText;
-          searchBtn.disabled = false;
-        }
-      }
-
-      function renderSearchResults(results) {
-        searchDropdown.innerHTML = '';
-        results.forEach((item) => {
-          const btn = document.createElement('button');
-          btn.type = 'button';
-          btn.className = 'w-full text-left px-3.5 py-2.5 hover:bg-[#00F0FF]/15 transition flex items-center justify-between gap-2 cursor-pointer';
-          const parts = item.display_name.split(',');
-          const primary = parts[0];
-          const secondary = parts.slice(1, 3).join(',');
-
-          btn.innerHTML = `
-            <div class="truncate">
-              <div class="text-xs font-semibold text-white truncate">${primary}</div>
-              <div class="text-[10px] text-slate-400 truncate">${secondary}</div>
-            </div>
-            <span class="font-mono-tabular text-[10px] text-[#00F0FF] shrink-0">${parseFloat(item.lat).toFixed(2)}°, ${parseFloat(item.lon).toFixed(2)}°</span>
-          `;
-
-          btn.addEventListener('click', () => {
-            teleportTo(parseFloat(item.lat), parseFloat(item.lon), item.display_name);
-            searchDropdown.classList.add('hidden');
-          });
-          searchDropdown.appendChild(btn);
-        });
-
-        searchDropdown.classList.remove('hidden');
-        // Auto-hide dropdown after 6 seconds if untouched
-        setTimeout(() => {
-          searchDropdown.classList.add('hidden');
-        }, 6500);
-      }
-
-      searchForm.addEventListener('submit', (e) => {
-        e.preventDefault();
-        searchCityNominatim(searchInput.value);
-      });
-
-      document.addEventListener('click', (e) => {
-        if (!searchForm.contains(e.target)) {
-          searchDropdown.classList.add('hidden');
-        }
-      });
-
-      // =========================================================================
-      // 8. VEHICLE CUSTOMIZATION & HUD UTILITY BUTTONS
-      // =========================================================================
-      function toggleHeadlights() {
-        car.headlightsOn = !car.headlightsOn;
-        document.getElementById('svg-headlights').setAttribute('opacity', car.headlightsOn ? '0.9' : '0');
-        const btn = document.getElementById('btn-toggle-lights');
-        btn.classList.toggle('bg-[#00F0FF]/15', car.headlightsOn);
-        btn.classList.toggle('text-[#00F0FF]', car.headlightsOn);
-        btn.classList.toggle('border-[#00F0FF]/40', car.headlightsOn);
-        btn.classList.toggle('bg-slate-900/60', !car.headlightsOn);
-        btn.classList.toggle('text-slate-500', !car.headlightsOn);
-        btn.classList.toggle('border-white/10', !car.headlightsOn);
-      }
-
-      document.getElementById('btn-toggle-lights').addEventListener('click', toggleHeadlights);
-
-      // Cycle Map Themes
-      document.getElementById('btn-map-theme').addEventListener('click', () => {
-        currentThemeIndex = (currentThemeIndex + 1) % MAP_THEMES.length;
-        const theme = MAP_THEMES[currentThemeIndex];
-        document.body.className = theme.bodyClass;
-        tileLayer.setUrl(theme.url);
-        showToast(theme.label.toUpperCase());
-      });
-
-      // Cycle Car Paint Colors
-      document.getElementById('btn-car-color').addEventListener('click', () => {
-        car.paintIndex = (car.paintIndex + 1) % CAR_PAINTS.length;
-        const paint = CAR_PAINTS[car.paintIndex];
-        document.getElementById('car-body-paint').setAttribute('fill', paint.hex);
-        document.getElementById('car-mirror-l').setAttribute('fill', paint.hex);
-        document.getElementById('car-mirror-r').setAttribute('fill', paint.hex);
-        showToast(`PEINTURE : ${paint.name.toUpperCase()}`);
-      });
-
-      // Toggle Engine Mode (Sport GT vs Hypercar)
-      document.getElementById('btn-engine-mode').addEventListener('click', () => {
-        car.engineMode = car.engineMode === 'sport' ? 'hyper' : 'sport';
-        const modeEl = document.getElementById('hud-engine-mode');
-        if (car.engineMode === 'hyper') {
-          modeEl.textContent = 'HYPER 320';
-          modeEl.className = 'font-display font-bold text-xs text-[#00F0FF]';
-          showToast('CARTOGRAPHIE MOTEUR : HYPERCAR (320 KM/H)');
-        } else {
-          modeEl.textContent = 'SPORT GT';
-          modeEl.className = 'font-display font-bold text-xs text-emerald-400';
-          showToast('CARTOGRAPHIE MOTEUR : SPORT GT (210 KM/H)');
-        }
-      });
-
-      // Zoom Buttons
-      document.getElementById('btn-zoom-in').addEventListener('click', () => {
-        map.setZoom(Math.min(map.getZoom() + 1, 19));
-      });
-      document.getElementById('btn-zoom-out').addEventListener('click', () => {
-        map.setZoom(Math.max(map.getZoom() - 1, 14));
-      });
-
-      // Toast Notification Helper
-      let toastTimeout = null;
-      function showToast(message) {
-        const toast = document.getElementById('telemetry-toast');
-        toast.textContent = message;
-        toast.classList.remove('opacity-0', '-translate-y-2');
-        toast.classList.add('opacity-100', 'translate-y-0');
-        clearTimeout(toastTimeout);
-        toastTimeout = setTimeout(() => {
-          toast.classList.add('opacity-0', '-translate-y-2');
-          toast.classList.remove('opacity-100', 'translate-y-0');
-        }, 2600);
-      }
-
-      // =========================================================================
-      // 9. CORE 60FPS PHYSICS, CAMERA FOLLOW & TELEMETRY LOOP
-      // =========================================================================
-      const domSpeed = document.getElementById('hud-speed-value');
-      const domSpeedArc = document.getElementById('speed-arc');
-      const domGear = document.getElementById('hud-gear');
-      const domRpmText = document.getElementById('hud-rpm-text');
-      const domRpmBar = document.getElementById('hud-rpm-bar');
-      const domCoords = document.getElementById('hud-coords');
-      const domHeading = document.getElementById('hud-heading');
-      const domOdometer = document.getElementById('hud-odometer');
-      const domCarRotator = document.getElementById('car-rotator');
-      const domWheelFL = document.getElementById('wheel-fl');
-      const domWheelFR = document.getElementById('wheel-fr');
-      const domBrakeLights = document.getElementById('svg-brakelights');
-      const domReverseLights = document.getElementById('svg-reverselights');
-      const domBoostFlames = document.getElementById('svg-boost-flames');
-      const domBadgeDrift = document.getElementById('badge-drift');
-      const domBadgeBoost = document.getElementById('badge-boost');
-      const domWaypointDist = document.getElementById('waypoint-distance');
-
-      const COMPASS_DIRS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSO', 'SO', 'OSO', 'O', 'ONO', 'NO', 'NNO'];
-
-      let lastTime = performance.now();
-
-      function normalizeAngle(deg) {
-        return ((deg % 360) + 360) % 360;
-      }
-
-      function shortestAngleDiff(fromDeg, toDeg) {
-        return ((toDeg - fromDeg + 540) % 360) - 180;
-      }
-
-      // Haversine distance in meters between two GPS coordinates
-      function distanceMeters(lat1, lng1, lat2, lng2) {
-        const R = 6371000;
-        const dLat = ((lat2 - lat1) * Math.PI) / 180;
-        const dLng = ((lng2 - lng1) * Math.PI) / 180;
-        const a =
-          Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-          Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
-        return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-      }
-
-      function stepPhysics(dt) {
-        const cfg = PHYSICS[car.engineMode];
-
-        // 1. Longitudinal Acceleration / Braking / Reverse
-        let isBraking = false;
-        const activeAccel = inputs.boost ? cfg.boostAccelRate : cfg.accelRate;
-        const maxAllowedSpeed = inputs.boost ? cfg.maxSpeedMs * 1.18 : cfg.maxSpeedMs;
-
-        if (inputs.up) {
-          if (car.speedMs < -0.5) {
-            // Braking while reversing
-            car.speedMs += cfg.brakeRate * dt;
-            isBraking = true;
-          } else {
-            car.speedMs += activeAccel * dt;
-          }
-        } else if (inputs.down) {
-          if (car.speedMs > 0.8) {
-            // Braking while moving forward
-            car.speedMs -= cfg.brakeRate * dt;
-            isBraking = true;
-          } else {
-            // Engage reverse gear
-            car.speedMs -= (cfg.accelRate * 0.65) * dt;
-          }
-        } else {
-          // Natural rolling resistance
-          if (Math.abs(car.speedMs) < 0.25) {
-            car.speedMs = 0;
-          } else {
-            car.speedMs -= Math.sign(car.speedMs) * cfg.rollingResist * dt;
-          }
-        }
-
-        // Handbrake deceleration
-        if (inputs.handbrake && Math.abs(car.speedMs) > 0.3) {
-          car.speedMs -= Math.sign(car.speedMs) * (cfg.brakeRate * 0.65) * dt;
-          isBraking = true;
-        }
-
-        // Aerodynamic drag proportional to v²
-        car.speedMs -= car.speedMs * Math.abs(car.speedMs) * cfg.dragCoeff * dt;
-
-        // Clamp speed
-        car.speedMs = Math.max(cfg.reverseMaxMs, Math.min(maxAllowedSpeed, car.speedMs));
-        car.speedKmh = Math.abs(car.speedMs) * 3.6;
-
-        // 2. Steering & Angular Velocity
-        const steerInput = (inputs.right ? 1 : 0) - (inputs.left ? 1 : 0);
-        const targetSteerAngle = steerInput * 30;
-        car.steerAngle += (targetSteerAngle - car.steerAngle) * Math.min(1, dt * 14);
-
-        if (Math.abs(car.speedMs) > 0.2) {
-          const dirSign = car.speedMs >= 0 ? 1 : -1;
-          // Steering sensitivity ramps up from 0 at rest, peaks around 35 km/h, slightly stabilizes at very high speed
-          const lowSpeedFactor = Math.min(Math.abs(car.speedMs) / 4.5, 1);
-          const highSpeedDamping = 1 - Math.min(car.speedKmh / 420, 0.38);
-          const driftBonus = inputs.handbrake ? 1.32 : 1.0;
-
-          const angularVel = steerInput * cfg.turnRateMax * lowSpeedFactor * highSpeedDamping * driftBonus * dirSign;
-          car.heading = normalizeAngle(car.heading + angularVel * dt);
-        }
-
-        // 3. Lateral Drift / Slip Angle Calculation
-        // When handbraking or cornering hard at high speed, velocity vector lags behind car nose heading
-        const gripFactor = inputs.handbrake ? 3.2 : (car.speedKmh > 110 && Math.abs(steerInput) > 0 ? 6.8 : 14.0);
-        const angleDiff = shortestAngleDiff(car.velocityAngle, car.heading);
-        car.velocityAngle = normalizeAngle(car.velocityAngle + angleDiff * Math.min(1, dt * gripFactor));
-
-        const slipDegrees = Math.abs(shortestAngleDiff(car.velocityAngle, car.heading));
-        car.driftIntensity = slipDegrees / 35;
-        car.isDrifting = (slipDegrees > 7.5 && car.speedKmh > 28) || (inputs.handbrake && car.speedKmh > 20);
-
-        // 4. Geographic Position Integration (Convert meters to degrees Lat/Lng)
-        if (Math.abs(car.speedMs) > 0.01) {
-          const travelRad = (car.velocityAngle * Math.PI) / 180;
-          const distMeters = car.speedMs * dt;
-
-          const northMeters = distMeters * Math.cos(travelRad);
-          const eastMeters = distMeters * Math.sin(travelRad);
-
-          const metersPerDegLat = 111320;
-          const metersPerDegLng = 111320 * Math.cos((car.lat * Math.PI) / 180);
-
-          car.lat += northMeters / metersPerDegLat;
-          car.lng += eastMeters / metersPerDegLng;
-          car.odometerKm += Math.abs(distMeters) / 1000;
-        }
-
-        // 5. Record Tire Skid Marks & Smoke Particles when Drifting or Hard Braking
-        const rearLeftPos = getCarOffsetLatLng(-1.1, -1.6);
-        const rearRightPos = getCarOffsetLatLng(1.1, -1.6);
-
-        if ((car.isDrifting || (isBraking && car.speedKmh > 45)) && prevRearLeft && prevRearRight) {
-          skidMarks.push({
-            lat1: prevRearLeft.lat,
-            lng1: prevRearLeft.lng,
-            lat2: rearLeftPos.lat,
-            lng2: rearLeftPos.lng,
-            alpha: Math.min(0.65, 0.25 + car.driftIntensity * 0.4)
-          });
-          skidMarks.push({
-            lat1: prevRearRight.lat,
-            lng1: prevRearRight.lng,
-            lat2: rearRightPos.lat,
-            lng2: rearRightPos.lng,
-            alpha: Math.min(0.65, 0.25 + car.driftIntensity * 0.4)
-          });
-
-          if (skidMarks.length > 360) {
-            skidMarks.splice(0, 2);
-          }
-
-          // Spawn tire smoke puff
-          if (Math.random() < 0.65) {
-            smokeParticles.push({
-              lat: (rearLeftPos.lat + rearRightPos.lat) * 0.5,
-              lng: (rearLeftPos.lng + rearRightPos.lng) * 0.5,
-              radius: 5 + Math.random() * 6,
-              alpha: 0.42
-            });
-          }
-        }
-
-        prevRearLeft = rearLeftPos;
-        prevRearRight = rearRightPos;
-
-        // Update brake, reverse & nitro visual states
-        domBrakeLights.setAttribute('opacity', isBraking ? '1' : '0');
-        domReverseLights.setAttribute('opacity', car.speedMs < -0.4 ? '1' : '0');
-        domBoostFlames.setAttribute('opacity', inputs.boost && inputs.up && car.speedMs > 2 ? '0.95' : '0');
-      }
-
-      function renderWorldEffects(dt) {
-        fxCtx.clearRect(0, 0, window.innerWidth, window.innerHeight);
-
-        // 1. Draw GPS Target Line if Waypoint is active
-        if (waypoint) {
-          const carPt = map.latLngToContainerPoint([car.lat, car.lng]);
-          const wpPt = map.latLngToContainerPoint([waypoint.lat, waypoint.lng]);
-
-          fxCtx.save();
-          fxCtx.beginPath();
-          fxCtx.setLineDash([8, 8]);
-          fxCtx.moveTo(carPt.x, carPt.y);
-          fxCtx.lineTo(wpPt.x, wpPt.y);
-          fxCtx.strokeStyle = 'rgba(0, 240, 255, 0.65)';
-          fxCtx.lineWidth = 2.5;
-          fxCtx.stroke();
-          fxCtx.restore();
-
-          const dist = distanceMeters(car.lat, car.lng, waypoint.lat, waypoint.lng);
-          if (dist < 18) {
-            clearWaypoint();
-            showToast('OBJECTIF GPS ATTEINT !');
-          } else {
-            domWaypointDist.textContent = dist >= 1000 ? `${(dist / 1000).toFixed(2)} km` : `${Math.round(dist)} m`;
-          }
-        }
-
-        // 2. Draw Persistent Tire Skid Marks on the Street
-        fxCtx.lineWidth = 3.2;
-        fxCtx.lineCap = 'round';
-        for (let i = skidMarks.length - 1; i >= 0; i--) {
-          const mark = skidMarks[i];
-          mark.alpha -= dt * 0.045;
-          if (mark.alpha <= 0.01) {
-            skidMarks.splice(i, 1);
-            continue;
-          }
-          const p1 = map.latLngToContainerPoint([mark.lat1, mark.lng1]);
-          const p2 = map.latLngToContainerPoint([mark.lat2, mark.lng2]);
-          fxCtx.strokeStyle = `rgba(15, 23, 42, ${mark.alpha})`;
-          fxCtx.beginPath();
-          fxCtx.moveTo(p1.x, p1.y);
-          fxCtx.lineTo(p2.x, p2.y);
-          fxCtx.stroke();
-        }
-
-        // 3. Draw Drift Smoke Particles
-        for (let i = smokeParticles.length - 1; i >= 0; i--) {
-          const p = smokeParticles[i];
-          p.alpha -= dt * 0.55;
-          p.radius += dt * 18;
-          if (p.alpha <= 0.01) {
-            smokeParticles.splice(i, 1);
-            continue;
-          }
-          const pt = map.latLngToContainerPoint([p.lat, p.lng]);
-          fxCtx.fillStyle = `rgba(226, 232, 240, ${p.alpha})`;
-          fxCtx.beginPath();
-          fxCtx.arc(pt.x, pt.y, p.radius, 0, Math.PI * 2);
-          fxCtx.fill();
-        }
-      }
-
-      function updateHUD() {
-        // Digital Speed (km/h)
-        const displaySpeed = Math.round(car.speedKmh);
-        domSpeed.textContent = displaySpeed;
-
-        // Radial Speed Arc (201 max stroke-dasharray for 240° sweep)
-        const maxGaugeSpeed = car.engineMode === 'hyper' ? 320 : 220;
-        const speedRatio = Math.min(car.speedKmh / maxGaugeSpeed, 1);
-        const arcLength = (speedRatio * 201).toFixed(1);
-        domSpeedArc.setAttribute('stroke-dasharray', `${arcLength} 302`);
-
-        if (car.speedKmh > maxGaugeSpeed * 0.85) {
-          domSpeedArc.setAttribute('stroke', '#EF4444');
-        } else if (car.speedKmh > maxGaugeSpeed * 0.65) {
-          domSpeedArc.setAttribute('stroke', '#F59E0B');
-        } else {
-          domSpeedArc.setAttribute('stroke', '#00F0FF');
-        }
-
-        // Automatic Gear & Simulated RPM
-        let gear = 'N';
-        let rpmRatio = 0.1;
-
-        if (car.speedMs < -0.4) {
-          gear = 'R';
-          rpmRatio = Math.min(Math.abs(car.speedKmh) / 60, 0.95);
-        } else if (car.speedKmh < 1.5 && !inputs.up) {
-          gear = 'N';
-          rpmRatio = 0.08;
-        } else {
-          const thresholds = car.engineMode === 'hyper' ? [0, 48, 95, 145, 200, 255, 340] : [0, 32, 64, 98, 136, 175, 230];
-          let g = 1;
-          for (let i = 1; i < thresholds.length; i++) {
-            if (car.speedKmh >= thresholds[i]) g = i + 1;
-          }
-          g = Math.min(g, 6);
-          gear = String(g);
-          const low = thresholds[g - 1] || 0;
-          const high = thresholds[g] || 220;
-          rpmRatio = 0.28 + 0.7 * Math.min(1, Math.max(0, (car.speedKmh - low) / (high - low)));
-        }
-
-        domGear.textContent = gear;
-        const rpmValue = Math.round(850 + rpmRatio * 7400);
-        domRpmText.textContent = rpmValue;
-        domRpmBar.style.width = `${Math.round(rpmRatio * 100)}%`;
-
-        // Drift & Boost Status Badges
-        domBadgeDrift.className = car.isDrifting
-          ? 'px-2 py-0.5 rounded text-[9px] font-mono-tabular font-semibold border border-amber-400 bg-amber-500/20 text-amber-300 transition'
-          : 'px-2 py-0.5 rounded text-[9px] font-mono-tabular font-semibold border border-white/10 bg-slate-900/60 text-slate-500 transition';
-
-        const isBoosting = inputs.boost && inputs.up;
-        domBadgeBoost.className = isBoosting
-          ? 'px-2 py-0.5 rounded text-[9px] font-mono-tabular font-semibold border border-[#00F0FF] bg-[#00F0FF]/25 text-[#00F0FF] transition'
-          : 'px-2 py-0.5 rounded text-[9px] font-mono-tabular font-semibold border border-white/10 bg-slate-900/60 text-slate-500 transition';
-
-        // Rotate Top-Down Car SVG & Front Steerable Wheels
-        domCarRotator.style.transform = `rotate(${car.heading.toFixed(2)}deg)`;
-        domWheelFL.setAttribute('transform', `translate(24, 84) rotate(${car.steerAngle.toFixed(1)})`);
-        domWheelFR.setAttribute('transform', `translate(64, 84) rotate(${car.steerAngle.toFixed(1)})`);
-
-        // Telemetry Coordinates, Compass & Odometer
-        const latDir = car.lat >= 0 ? 'N' : 'S';
-        const lngDir = car.lng >= 0 ? 'E' : 'W';
-        domCoords.textContent = `${Math.abs(car.lat).toFixed(4)}° ${latDir}, ${Math.abs(car.lng).toFixed(4)}° ${lngDir}`;
-
-        const compassIdx = Math.round(car.heading / 22.5) % 16;
-        const hdgStr = String(Math.round(car.heading)).padStart(3, '0');
-        domHeading.textContent = `${hdgStr}° ${COMPASS_DIRS[compassIdx]}`;
-        domOdometer.textContent = `${car.odometerKm.toFixed(2)} km`;
-      }
-
-      function gameLoop(now) {
-        const dt = Math.min((now - lastTime) / 1000, 0.05); // Cap delta time to 50ms to prevent jumps on tab switch
-        lastTime = now;
-
-        stepPhysics(dt);
-
-        // Lock camera smoothly onto the vehicle's geographic coordinates
-        map.setView([car.lat, car.lng], map.getZoom(), { animate: false });
-
-        renderWorldEffects(dt);
-        updateHUD();
-        updateAudio();
-
-        requestAnimationFrame(gameLoop);
-      }
-
-      // Start the 60fps simulation loop
-      requestAnimationFrame((now) => {
-        lastTime = now;
-        showToast('PRÊT À CONDUIRE — CASABLANCA');
-        requestAnimationFrame(gameLoop);
-      });
-    })();
-  </script>
+      state.lat = f.dest ? f.dest.lat : state.lat; state.lng = f.dest ? f.dest.lng : state.lng;
+      state.flying=null; state.speed=0; saveGame(); movePlayerMarker(); updateHUD();
+    }
+  }
+  document.getElementById('cockpitInfo').textContent =
+    f.plane.name+' · '+Math.round(f.speed)+' km/h · Alt '+Math.round(f.alt)+' m · Phase : '+f.phase;
+}
+
+/* ================= SECTION 12 — À PIED : DÉJÀ DANS §6 (walkMode) =================
+Rappel : F bascule voiture / à pied. À pied, le rapport affiche PIED, la
+voiture reste garée à l'endroit où tu l'as quittée, et tu reviens avec F. */
+
+/* ================= SECTION 13 — RADIO WEB AUDIO =================
+3 stations, musique synthétisée en direct, aucun fichier : Aube FM (calme),
+Nitro FM (rapide), Casa Waves (groove). Le choix est sauvegardé, comme la
+station d'une vraie voiture. Le son n'est audible que si l'utilisateur a
+interagi une fois avec la page (règle du navigateur, pas un bug du jeu). */
+var audioCtx=null, radioTimer=null, radioNote=0;
+var STATIONS=[
+ {id:'aube', name:'Aube FM', notes:[261,329,392,523]},
+ {id:'nitro', name:'Nitro FM', notes:[220,277,330,440]},
+ {id:'casa', name:'Casa Waves', notes:[196,246,294,392]}
+];
+function ensureAudio(){
+  if(audioCtx) return;
+  try{ audioCtx=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){}
+}
+function beep(freq, dur){
+  if(!state.sound) return; ensureAudio(); if(!audioCtx) return;
+  var o=audioCtx.createOscillator(), g=audioCtx.createGain();
+  o.frequency.value=freq; o.type='sine'; g.gain.value=0.12;
+  o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime+dur);
+}
+function fanfare(){ [523,659,784,1046].forEach(function(f,i){ setTimeout(function(){ beep(f,.3); }, i*130); }); }
+function cycleRadio(){
+  var ids=['arret','aube','nitro','casa'];
+  var i=ids.indexOf(state.radio); state.radio=ids[(i+1)%ids.length];
+  saveGame(); applyRadio(); updateHUD();
+}
+function applyRadio(){
+  if(radioTimer) clearInterval(radioTimer); radioTimer=null;
+  var st=STATIONS.find(function(s){ return s.id===state.radio; });
+  var label = st ? st.name : 'arrêt';
+  document.getElementById('radioHud').textContent='Radio : '+label;
+  document.getElementById('radioBtn').textContent='Radio : '+label;
+  if(!st || !state.sound) return;
+  ensureAudio(); if(!audioCtx) return;
+  radioNote=0;
+  radioTimer=setInterval(function(){
+    if(!state.sound) return;
+    beep(st.notes[radioNote%st.notes.length], .35); radioNote++;
+  }, 420);
+}
+function toggleSound(){
+  state.sound=!state.sound; saveGame(); applyRadio();
+  document.getElementById('soundBtn').textContent='Son : '+(state.sound?'oui':'non');
+  showMsg('Son '+(state.sound?'activé':'coupé')+'.');
+}
+
+/* ================= SECTION 14 — MINIMAP GTA + JOUR/NUIT =================
+Minimap : joueur au centre (flèche), Nord en haut, trafic en points colorés,
+piétons en blanc, mission en doré, bases en bleu, police qui clignote quand
+les étoiles montent. Jour/nuit : horloge 10:00 au départ, la Longue Nuit tombe
+progressivement, chaque Phare rallumé éclaircit la carte (opacité du voile). */
+var gameHour=10;
+function drawMinimap(){
+  var cv=document.getElementById('minimap'); if(!cv) return;
+  var ctx=cv.getContext('2d'); ctx.clearRect(0,0,150,150);
+  ctx.fillStyle='#0f172a'; ctx.beginPath(); ctx.arc(75,75,75,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle='#334155'; ctx.strokeRect(0,0,150,150);
+  /* Bases bleues, mission dorée, trafic coloré, tous relatifs au joueur. */
+  BASES.forEach(function(b){
+    var x=75+(b.lng-state.lng)*3000, y=75-(b.lat-state.lat)*3000;
+    if(Math.abs(x-75)<70 && Math.abs(y-75)<70){ ctx.fillStyle='#3b82f6'; ctx.fillRect(x-3,y-3,6,6); }
+  });
+  if(activeMission){
+    var x=75+(activeMission.target.lng-state.lng)*3000, y=75-(activeMission.target.lat-state.lat)*3000;
+    ctx.fillStyle='#fbbf24'; ctx.beginPath(); ctx.arc(x,y,6,0,Math.PI*2); ctx.fill();
+  }
+  traffic.forEach(function(t){
+    var x=75+(t.lng-state.lng)*3000, y=75-(t.lat-state.lat)*3000;
+    if(Math.abs(x-75)<70 && Math.abs(y-75)<70){ ctx.fillStyle=t.car.color; ctx.fillRect(x-2,y-2,4,4); }
+  });
+  /* Joueur au centre, flèche orientée selon le cap. */
+  ctx.save(); ctx.translate(75,75); ctx.rotate(state.heading*Math.PI/180);
+  ctx.fillStyle='#fff'; ctx.beginPath(); ctx.moveTo(0,-10); ctx.lineTo(7,8); ctx.lineTo(0,4); ctx.lineTo(-7,8); ctx.closePath(); ctx.fill(); ctx.restore();
+  ctx.fillStyle='#fff'; ctx.font='bold 12px sans-serif'; ctx.fillText('N', 70, 16);
+  /* Voile nuit : 0,55 la nuit, 0 le jour, -0,08 par Phare rallumé. */
+  var night = (gameHour<6 || gameHour>20) ? 0.55 : 0;
+  var veil = Math.max(0, night - state.aubes*0.08);
+  document.getElementById('night').style.opacity = veil>0 ? 1 : 0;
+  document.getElementById('night').style.background = 'rgba(2,6,23,'+veil+')';
+  document.getElementById('sky').style.opacity = night>0 ? 0.25 : 0.9;
+}
+
+/* ================= SECTION 15 — MULTIJOUEUR P2P PEERJS =================
+100 % gratuit, open source MIT, pair-à-pair WebRTC : aucun serveur de jeu,
+aucun compte, aucune donnée de partie sur un serveur central. Seul le broker
+public gratuit PeerJS fait la présentation initiale (trouver l'autre joueur).
+Créer = code 6 caractères à donner à un ami (bouton Copier dans l'idée : le
+code s'affiche dans l'état du salon). Rejoindre = saisir le code. Ensuite,
+positions envoyées ~8 fois par seconde, marqueur distant interpolé en douceur,
+point vert sur la minimap, encadré partenaire, téléportation chez lui.
+Si PeerJS ne charge pas, message français clair, jeu solo intact. */
+var peer=null, conn=null, partner=null, partnerMarker=null, multiTimer=null;
+function randomCode(){
+  var chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789', s='';
+  for(var i=0;i<6;i++) s+=chars[Math.floor(Math.random()*chars.length)];
+  return s;
+}
+function createRoom(){
+  if(typeof Peer==='undefined'){ document.getElementById('multiStatus').textContent='La bibliothèque PeerJS n\'a pas pu se charger (hors-ligne ?). Jeu solo intact, réessaie avec la connexion.'; showMsg('PeerJS hors-ligne : multijoueur indisponible pour l\'instant, solo intact.'); return; }
+  var code=randomCode();
+  try{
+    peer=new Peer('worlddrive-'+code);
+    peer.on('open', function(){ document.getElementById('multiStatus').textContent='Salon créé ! Ton code : '+code+' — donne-le à un ami, il clique Rejoindre et saisit ce code.'; document.getElementById('roomCode').value=code; showMsg('Salon créé, code '+code); });
+    peer.on('connection', function(c){ conn=c; setupConn(); });
+    peer.on('error', function(e){ document.getElementById('multiStatus').textContent='Erreur salon : '+(e && e.type ? e.type : 'réseau qui bloque le P2P')+'. Essaie un autre réseau ou rejoue en solo.'; });
+  }catch(e){ document.getElementById('multiStatus').textContent='Multijoueur indisponible sur ce navigateur.'; }
+}
+function joinRoom(){
+  var code=(document.getElementById('roomCode').value||'').trim().toUpperCase();
+  if(code.length!==6){ document.getElementById('multiStatus').textContent='Saisis un code salon à 6 caractères d\'abord.'; return; }
+  if(typeof Peer==='undefined'){ document.getElementById('multiStatus').textContent='La bibliothèque PeerJS n\'a pas pu se charger (hors-ligne ?).'; return; }
+  try{
+    peer=new Peer();
+    peer.on('open', function(){ conn=peer.connect('worlddrive-'+code); setupConn(); document.getElementById('multiStatus').textContent='Connexion au salon '+code+'…'; });
+    peer.on('error', function(e){ document.getElementById('multiStatus').textContent='Salon introuvable ou code déjà pris : vérifie le code ('+code+') et réessaie.'; });
+  }catch(e){ document.getElementById('multiStatus').textContent='Multijoueur indisponible sur ce navigateur.'; }
+}
+function setupConn(){
+  if(!conn) return;
+  conn.on('open', function(){
+    document.getElementById('multiStatus').textContent='✅ Connecté ! Vos voitures apparaissent l\'une chez l\'autre.';
+    showMsg('Multijoueur connecté !');
+    if(multiTimer) clearInterval(multiTimer);
+    /* Envoi ~8 fois par seconde : position, cap, vitesse, mode, pilote, couleur. */
+    multiTimer=setInterval(function(){
+      if(conn && conn.open) conn.send({lat:state.lat, lng:state.lng, heading:state.heading, speed:state.speed, onFoot:state.onFoot, flying:!!state.flying, pilot:state.pilot, paint:state.paint, name:currentCar().pilot});
+    }, 125);
+  });
+  conn.on('data', function(d){
+    partner=d;
+    document.getElementById('partnerBox').innerHTML='<b>Partenaire : '+d.name+'</b><br>Mode : '+(d.flying?'avion':d.onFoot?'à pied':'voiture')+' · Vitesse : '+Math.round(d.speed)+' km/h · Distance : '+Math.round(distanceM(state.lat,state.lng,d.lat,d.lng)/1000)+' km';
+    if(map){
+      if(!partnerMarker) partnerMarker=L.marker([d.lat,d.lng], {icon:carIcon(d.paint, carById(d.pilot).shape, 'AMI')}).addTo(map);
+      else partnerMarker.setLatLng([d.lat,d.lng]);
+    }
+  });
+  conn.on('close', function(){ document.getElementById('multiStatus').textContent='Partenaire déconnecté. Le jeu solo continue.'; });
+}
+function teleportToPartner(){
+  if(!partner){ showMsg('Aucun partenaire connecté. Crée ou rejoins un salon d\'abord.'); return; }
+  if(state.flying){ showMsg('Téléportation refusée en avion. Atterris d\'abord.'); return; }
+  teleport(partner.lat, partner.lng, state.city);
+}
+
+/* ================= SECTION 16 — TROPHÉES, OBJECTIFS, HUD, BOUCLE =================
+Trophées (8) : premier contrat, 10 missions, niveau 5, 100 km, roi du drift,
+300 km/h, 5 étoiles, campagne terminée. Objectifs (7) : conduite libre + vol,
+bonus, sauvegardés. La boucle tourne à ~60 images/s, avec un pas de temps
+plafonné pour éviter les sauts si l'onglet a dormi. */
+var TROPHIES=[
+ {id:'first', name:'Premier contrat'}, {id:'ten', name:'10 missions'},
+ {id:'level5', name:'Niveau 5'}, {id:'km100', name:'100 km parcourus'},
+ {id:'driftking', name:'Roi du drift'}, {id:'speed300', name:'300 km/h'},
+ {id:'stars5', name:'5 étoiles'}, {id:'captain', name:'Capitaine d\'aube'}
+];
+var OBJECTIVES=[
+ 'Conduis librement dans 3 villes différentes',
+ 'Termine une mission libre', 'Rallume un Phare de campagne',
+ 'Vole avec un avion depuis une base', 'Réussis un vol passagers Boeing',
+ 'Débloque un trophée', 'Atteins le niveau 3'
+];
+function renderTrophies(){
+  var el=document.getElementById('trophiesList'); if(!el) return;
+  var n=Object.keys(state.trophies).length;
+  el.innerHTML='<p>'+n+'/8 trophées débloqués.</p>' + TROPHIES.map(function(t){
+    return '<div class="card">'+(state.trophies[t.id]?'🏆 ':'🔒 ')+t.name+'</div>';
+  }).join('');
+  var panel=document.querySelector('#trophiesPanel h2'); if(panel) panel.textContent='Trophées — '+n+'/8';
+}
+function renderObjectives(){
+  var el=document.getElementById('objectivesList'); if(!el) return;
+  var done=[
+    state.city!=='Casablanca', state.missionsDone>0, state.aubes>0,
+    state.flights>0 || !!state.flying, state.flights>0,
+    Object.keys(state.trophies).length>0, state.level>=3
+  ];
+  el.innerHTML=OBJECTIVES.map(function(o,i){
+    return '<div class="card">'+(done[i]?'✅ ':'⬜ ')+o+'</div>';
+  }).join('');
+}
+function renderMissions(){
+  var el=document.getElementById('missionList'); el.innerHTML='';
+  MISSION_TYPES.forEach(function(m){
+    var d=document.createElement('div'); d.className='card';
+    d.innerHTML='<b>'+m.name+'</b><p>'+m.desc+'</p><p>Récompense : '+m.reward+' $ · '+m.xp+' XP</p>';
+    d.onclick=function(){ startMission(m.id); }; el.appendChild(d);
+  });
+  var ab=document.createElement('button'); ab.className='bigbtn'; ab.textContent='Abandonner la mission en cours';
+  ab.onclick=function(){ abandonMission(); }; el.appendChild(ab);
+}
+function renderCampaign(){
+  var el=document.getElementById('campaignList'); el.innerHTML='';
+  CAMPAIGN.forEach(function(c,i){
+    var d=document.createElement('div'); d.className='card'+(state.chapter===i?' sel':'');
+    d.innerHTML='<b>'+c.title+'</b><p>'+c.speaker+' : « '+c.text+' »</p><p>But : '+c.goal+'</p>';
+    d.onclick=function(){
+      state.chapter=i; saveGame();
+      document.getElementById('campaignDialog').innerHTML='<b>'+c.speaker+'</b> : '+c.text+'<br>But : '+c.goal;
+      var city=CITIES.find(function(x){ return x.name===c.city; });
+      if(city) teleport(city.lat, city.lng, city.name);
+      showMsg('Chapitre '+(i+1)+' : '+c.title);
+    };
+    el.appendChild(d);
+  });
+  var c=CAMPAIGN[state.chapter]||CAMPAIGN[0];
+  document.getElementById('campaignDialog').innerHTML='<b>'+c.speaker+'</b> : '+c.text+'<br>But : '+c.goal;
+}
+function updateHUD(){
+  var car=currentCar();
+  document.getElementById('speed').textContent=Math.round(Math.abs(state.speed));
+  document.getElementById('gear').textContent='Rapport '+Math.max(1, Math.min(6, Math.floor(Math.abs(state.speed)/50)+1));
+  document.getElementById('nitro').textContent=(state.pilot==='roadster' && state.roadster.spacex ? 'SPACE X ' : 'NITRO ')+Math.round(state.nitro)+'%';
+  document.getElementById('health').textContent='ÉTAT '+Math.round(state.health)+'%';
+  document.getElementById('money').textContent=state.money+' $';
+  document.getElementById('level').textContent='Niv. '+state.level;
+  document.getElementById('stars').textContent='★ '+(state.starsUp||0);
+  document.getElementById('city').textContent=state.city;
+  document.getElementById('aubes').textContent='Aubes rallumées '+state.aubes+'/6';
+  document.getElementById('wheel').style.transform='rotate('+(-state.heading*0.2)+'deg)';
+  if(Math.abs(state.speed)>=300) unlockTrophy('speed300','300 km/h');
+  if(state.distanceKm>=100) unlockTrophy('km100','100 km parcourus');
+  if(state.level>=5) unlockTrophy('level5','Niveau 5');
+  if((state.starsUp||0)>=5) unlockTrophy('stars5','5 étoiles');
+}
+function showMsg(text){
+  var el=document.getElementById('msg'); el.textContent=text; el.style.display='block';
+  clearTimeout(showMsg._t); showMsg._t=setTimeout(function(){ el.style.display='none'; }, 4000);
+}
+function openPanel(id){ closePanels(); document.getElementById(id).classList.add('open');
+  if(id==='garagePanel') renderGarage(); if(id==='hangarPanel') renderHangar();
+  if(id==='missionPanel') renderMissions(); if(id==='campaignPanel') renderCampaign();
+  if(id==='trophiesPanel') renderTrophies(); if(id==='objectivesPanel') renderObjectives();
+}
+function togglePanel(id){ var el=document.getElementById(id); if(el.classList.contains('open')) closePanels(); else openPanel(id); }
+function closePanels(){ document.querySelectorAll('.panel').forEach(function(p){ p.classList.remove('open'); }); }
+function resetSave(){ if(confirm('Tout réinitialiser ? Argent, niveau, trophées et sauvegarde seront effacés.')){ try{ localStorage.removeItem(SAVE_KEY); }catch(e){} location.reload(); } }
+
+/* ================= SECTION 17 — CLAVIER, TACTILE, DÉMARRAGE, BOUCLE =================
+Clavier : ZQSD / flèches, Espace drift, Maj nitro, C caméra, V angle, F à pied,
+H klaxon, E base proche, R réapparaître. Les touches sont ignorées pendant la
+saisie dans un champ texte (recherche de ville, code salon). */
+document.addEventListener('keydown', function(e){
+  if(e.target && (e.target.tagName==='INPUT' || e.target.tagName==='TEXTAREA')) return;
+  var k=e.code;
+  if(k==='KeyW' || k==='ArrowUp') keys.up=true;
+  if(k==='KeyS' || k==='ArrowDown') keys.down=true;
+  if(k==='KeyA' || k==='ArrowLeft') keys.left=true;
+  if(k==='KeyD' || k==='ArrowRight') keys.right=true;
+  if(k==='Space'){ keys.handbrake=true; e.preventDefault(); }
+  if(k==='ShiftLeft' || k==='ShiftRight') keys.boost=true;
+  if(k==='KeyC') cycleCamera();
+  if(k==='KeyV') cyclePreset();
+  if(k==='KeyF') walkMode();
+  if(k==='KeyH') honk();
+  if(k==='KeyE') openNearestBase();
+  if(k==='KeyR'){ state.speed=0; state.health=100; updateHUD(); showMsg('Réapparition, état restauré.'); }
+});
+document.addEventListener('keyup', function(e){
+  var k=e.code;
+  if(k==='KeyW' || k==='ArrowUp') keys.up=false;
+  if(k==='KeyS' || k==='ArrowDown') keys.down=false;
+  if(k==='KeyA' || k==='ArrowLeft') keys.left=false;
+  if(k==='KeyD' || k==='ArrowRight') keys.right=false;
+  if(k==='Space') keys.handbrake=false;
+  if(k==='ShiftLeft' || k==='ShiftRight') keys.boost=false;
+});
+document.querySelectorAll('#touch button').forEach(function(b){
+  var key=b.getAttribute('data-k');
+  function on(e){ e.preventDefault(); keys[key]=true; }
+  function off(e){ e.preventDefault(); keys[key]=false; }
+  b.addEventListener('pointerdown', on); b.addEventListener('pointerup', off); b.addEventListener('pointerleave', off);
+});
+function startGame(){
+  document.getElementById('home').style.display='none';
+  ensureAudio(); applyRadio();
+  showMsg('Bienvenue, Passeur ! ZQSD pour conduire, C pour la caméra, F pour marcher.');
+}
+var lastT=performance.now();
+function loop(now){
+  var dt=Math.min(0.05, (now-lastT)/1000); lastT=now;
+  gameHour=(gameHour+dt/60)%24; /* 1 minute réelle = 1 heure de jeu, cycle visible */
+  updateDriving(dt); updateFlight(dt); updateTraffic(dt); checkMission();
+  movePlayerMarker(); drawMinimap(); applyCamera();
+  if(Math.random()<0.002) saveGame(); /* sauvegarde régulière, sans spammer */
+  requestAnimationFrame(loop);
+}
+/* Démarrage : charge la sauvegarde si elle existe, sinon Casablanca par défaut.
+   La carte, le trafic et la boucle démarrent tout de suite, même avant le
+   premier clic Démarrer, pour que l'accueil montre déjà le monde. */
+(function init(){
+  var restored=loadGame();
+  initMap(); spawnTraffic(); renderHomePilots(); renderGarage(); renderTrophies(); renderObjectives();
+  applyCamera(); updateHUD();
+  if(restored) showMsg('Sauvegarde restaurée : '+state.city+', niveau '+state.level+', '+state.money+' $.');
+  requestAnimationFrame(loop);
+})();
+</script>
 </body>
 </html>
